@@ -2260,7 +2260,7 @@ function renderHomeworkPanel(){
     if(locked){
       h+='<div style="font-size:12px;color:#94A3B8;margin:12px 0 4px;">'+(status==='승인'?'✅ 결재가 완료되어 더 이상 수정할 수 없습니다.':'⏳ 대통령 결재 대기 중에는 수정할 수 없습니다.')+'</div>';
     }
-    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:14px;">';
+    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:14px;">';
     _hwStudents.forEach(function(s){
       var sno=String(s.studentNo);
       var st=(_hwLocalStatuses[hw.hwId]||{})[sno]||'';
@@ -2277,7 +2277,7 @@ function makeHwStudentCell(hwId, sno, name, st, locked){
   // 이름
   h+='<div style="min-width:0;flex:1;">';
   h+='  <div style="font-size:10px;color:#94A3B8;margin-bottom:1px;">'+esc(sno)+'번</div>';
-  h+='  <div style="font-size:14px;font-weight:600;color:#1E293B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(name)+'</div>';
+  h+='  <div style="font-size:14px;font-weight:600;color:#1E293B;line-height:1.3;word-break:keep-all;overflow-wrap:anywhere;">'+esc(name)+'</div>';
   h+='</div>';
 
   // ★ 3개 버튼 (동그라미, 세모, 엑스)
@@ -2289,9 +2289,9 @@ function makeHwStudentCell(hwId, sno, name, st, locked){
   var oActive = st==='O';
   h+='<button'+(locked?'':' onclick="selectHwStatus(\''+hwId+'\',\''+sno+'\',\'O\')"')+' id="hw-O-'+hwId+'-'+sno+'"';
   h+=' title="제출"'+(locked?' disabled':'');
-  h+=' style="width:34px;height:34px;border-radius:50%;border:2px solid '+(oActive?'#10B981':'#D1FAE5')+';';
+  h+=' style="width:30px;height:30px;border-radius:50%;border:2px solid '+(oActive?'#10B981':'#D1FAE5')+';';
   h+='background:'+(oActive?'#10B981':'white')+';';
-  h+='cursor:'+cursorStyle+';font-size:16px;display:flex;align-items:center;justify-content:center;';
+  h+='cursor:'+cursorStyle+';font-size:14px;display:flex;align-items:center;justify-content:center;';
   h+='transition:all 0.15s;box-shadow:'+(oActive?'0 2px 8px rgba(16,185,129,0.4)':'none')+';">';
   h+='<span style="color:'+(oActive?'white':'#10B981')+';">●</span>';
   h+='</button>';
@@ -2300,7 +2300,7 @@ function makeHwStudentCell(hwId, sno, name, st, locked){
   var dActive = st==='△';
   h+='<button'+(locked?'':' onclick="selectHwStatus(\''+hwId+'\',\''+sno+'\',\'△\')"')+' id="hw-D-'+hwId+'-'+sno+'"';
   h+=' title="지각"'+(locked?' disabled':'');
-  h+=' style="width:34px;height:34px;border-radius:50%;border:2px solid '+(dActive?'#F59E0B':'#FDE68A')+';';
+  h+=' style="width:30px;height:30px;border-radius:50%;border:2px solid '+(dActive?'#F59E0B':'#FDE68A')+';';
   h+='background:'+(dActive?'#F59E0B':'white')+';';
   h+='cursor:'+cursorStyle+';font-size:14px;display:flex;align-items:center;justify-content:center;';
   h+='transition:all 0.15s;box-shadow:'+(dActive?'0 2px 8px rgba(245,158,11,0.4)':'none')+';">';
@@ -2311,7 +2311,7 @@ function makeHwStudentCell(hwId, sno, name, st, locked){
   var xActive = st==='X';
   h+='<button'+(locked?'':' onclick="selectHwStatus(\''+hwId+'\',\''+sno+'\',\'X\')"')+' id="hw-X-'+hwId+'-'+sno+'"';
   h+=' title="미제출"'+(locked?' disabled':'');
-  h+=' style="width:34px;height:34px;border-radius:50%;border:2px solid '+(xActive?'#EF4444':'#FECACA')+';';
+  h+=' style="width:30px;height:30px;border-radius:50%;border:2px solid '+(xActive?'#EF4444':'#FECACA')+';';
   h+='background:'+(xActive?'#EF4444':'white')+';';
   h+='cursor:'+cursorStyle+';font-size:15px;font-weight:900;display:flex;align-items:center;justify-content:center;';
   h+='transition:all 0.15s;box-shadow:'+(xActive?'0 2px 8px rgba(239,68,68,0.4)':'none')+';">';
