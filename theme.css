@@ -461,3 +461,38 @@ body{background:#FBF8F2}
 
 /* 화면 위쪽 제목 크게 */
 .mh-top [style*="font-size:16px"][style*="font-weight:700"]{font-size:20px !important;font-weight:800 !important}
+
+/* ==========================================================================
+   + 초록 / - 빨강 (ui-colors.js가 자동으로 붙임)
+   ========================================================================== */
+.num-pos,.tp{color:#0E9F63 !important;font-weight:800 !important}
+.num-neg,.tm{color:#E5384B !important;font-weight:800 !important}
+th.num-pos,th.num-neg{font-weight:800 !important}
+button.num-pos{background:#ECFDF5 !important;border-color:#A7F3D0 !important}
+button.num-neg{background:#FFF1F2 !important;border-color:#FECDD3 !important}
+.tog-on-inc{color:#0E9F63 !important}
+.tog-on-exp{color:#E5384B !important}
+.sb-green{background:#12A86B}
+.sb-green:hover{background:#0E8F5A}
+
+/* 용돈기입장 — 선생님 학생 선택 칸 */
+#w-teacher-pick .ssel{margin-bottom:14px;font-weight:700}
+
+/* ==========================================================================
+   아이콘·이모티콘 통통 움직임
+   ========================================================================== */
+.bob{display:inline-block;animation:bob 2.6s ease-in-out infinite;will-change:transform}
+.tile-icon.bob,.role-icon.bob,.st > i.bob{display:inline-flex}
+.tile-icon.bob{display:flex}
+@keyframes bob{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-4px)}
+}
+/* 메뉴 타일에 마우스를 올리면 아이콘이 한 번 크게 콩! */
+.dash-tile:hover .tile-icon{animation:hop .55s cubic-bezier(.3,1.6,.5,1) 1}
+@keyframes hop{
+  0%{transform:translateY(0) scale(1)}
+  35%{transform:translateY(-8px) scale(1.06)}
+  65%{transform:translateY(1px) scale(.98)}
+  100%{transform:translateY(0) scale(1)}
+}

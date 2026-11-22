@@ -970,6 +970,7 @@ function openStudentPanel(viewId){
   if(viewId==='view-asset-inspect'){ loadAssetInspect(); }
   if(viewId==='view-stats-office') { loadStatsOffice(); }
   if(viewId==='view-wholesale')    { initWholesalePanel(); }
+  if(viewId==='view-citizen-wallet'){ initWalletPanel(); }
   go(viewId);
 }
 
@@ -997,23 +998,89 @@ function openBank(){
 // ============================================================
 // 학생 지출
 // ============================================================
+// ── 용돈기입장 열기: 선생님이면 학생 선택 + 수입 기록 가능 ──
+var _walletMode = 'exp';
+
+function initWalletPanel(){
+  var pick = $('w-teacher-pick'), incBtn = $('w-inc-btn');
+  if(_isTeacher){
+    pick.style.display = 'block';
+    incBtn.className = 'tog-btn';
+    incBtn.innerHTML = '<i class="fa-solid fa-plus" style="font-size:11px;"></i> 수입 (+)';
+    fillWalletStudentSelect();
+    setWalletMode('inc');
+  } else {
+    pick.style.display = 'none';
+    incBtn.innerHTML = '수입 (교사만 가능)';
+    setWalletMode('exp');
+  }
+}
+
+function fillWalletStudentSelect(){
+  var sel = $('w-stu-sel');
+  var render = function(list){
+    var keep = sel.value || (_sno ? String(_sno) : '');
+    var h = '<option value="">-- 학생을 선택하세요 --</option>';
+    list.forEach(function(s){
+      h += '<option value="'+esc(s.studentNo)+'">'+esc(s.studentNo)+'번 '+esc(s.name||'')+'</option>';
+    });
+    sel.innerHTML = h;
+    if(keep && list.some(function(s){ return String(s.studentNo)===keep; })){ sel.value = keep; walletTeacherPick(); }
+    else walletTeacherPick();
+  };
+  if(_stuList && _stuList.length) return render(_stuList);
+  var cc = _cc || _adminCC;
+  if(!cc) return;
+  google.script.run.withSuccessHandler(function(r){
+    if(r.success){ _stuList = r.list; render(r.list); }
+  }).getStudentList(cc);
+}
+
+function walletTeacherPick(){
+  var sno = $('w-stu-sel').value;
+  if(!sno){
+    initStudentWallet({card:0,bank:0,credit:0});
+    $('s-tx-tbody').innerHTML = '<tr><td colspan="5" class="empty-msg">학생을 선택하세요.</td></tr>';
+    $('s-tx-cnt').textContent = '0건';
+    return;
+  }
+  var stu = (_stuList||[]).find(function(s){ return String(s.studentNo)===sno; });
+  if(stu) initStudentWallet(stu);
+  loadTx(_cc || _adminCC, sno, 's-tx-tbody', 's-tx-cnt');
+}
+
+function setWalletMode(m){
+  if(m==='inc' && !_isTeacher){ showToast('🔒 수입은 선생님만 기록할 수 있어요.'); return; }
+  _walletMode = m;
+  $('w-inc-btn').className = 'tog-btn ' + (_isTeacher ? (m==='inc' ? 'tog-on-inc' : '') : 'tog-dis');
+  $('w-exp-btn').className = 'tog-btn ' + (m==='exp' ? 'tog-on-exp' : '');
+  $('w-save-btn').className = 'sb ' + (m==='inc' ? 'sb-green' : 'sb-red');
+  $('exp-memo').placeholder = m==='inc' ? '내역 (예: 월급, 보상)' : '내역 (예: 간식 구매, 벌금)';
+}
+
 function doExpense(){
   var memo=$('exp-memo').value, amt=$('exp-amt').value;
+  var cc  = _cc || _adminCC;
+  var sno = _isTeacher ? $('w-stu-sel').value : _sno;
+  var isInc = _isTeacher && _walletMode==='inc';
+  if(!sno) return alert('학생을 선택해 주세요.');
   if(!memo) return alert('내역을 입력해 주세요.');
   if(!amt||amt<=0) return alert('금액을 올바르게 입력해 주세요.');
-  
+
   showLoading(); // ★ 서버 통신 시작 전 로딩 켜기
-  
-  google.script.run
+
+  var runner = google.script.run
     .withSuccessHandler(function(r){
       hideLoading(); // ★ 통신 성공 시 로딩 끄기
       if(r.success){
-        showToast('✅ 지출이 기록되었습니다.');
+        showToast(isInc ? '✅ 수입이 기록되었습니다.' : '✅ 지출이 기록되었습니다.');
         $('exp-memo').value=''; $('exp-amt').value='';
         $('s-card').textContent=Number(r.newCard).toLocaleString()+' 머니';
         var bank=parseInt(($('s-bank').textContent||'0').replace(/[^0-9]/g,''))||0;
         $('s-total').textContent=(Number(r.newCard)+bank).toLocaleString()+' 머니';
-        loadTx(_cc,_sno,'s-tx-tbody','s-tx-cnt');
+        var stu=(_stuList||[]).find(function(s){ return String(s.studentNo)===String(sno); });
+        if(stu) stu.card=Number(r.newCard);
+        loadTx(cc,sno,'s-tx-tbody','s-tx-cnt');
         if(r.newCard<0) showBankrupt();
       } else {
         alert(r.msg);
@@ -1022,8 +1089,9 @@ function doExpense(){
     .withFailureHandler(function(err){
       hideLoading(); // ★ 서버 에러 발생 시에도 로딩 끄기
       alert('서버와 통신 중 오류가 발생했습니다: ' + err.message);
-    })
-    .recordExpense(_cc, _sno, memo, amt);
+    });
+  if(isInc) runner.recordIncome(cc, sno, memo, amt, '교사수동지급');
+  else      runner.recordExpense(cc, sno, memo, amt);
 }
 
 // ============================================================
@@ -1693,7 +1761,7 @@ function renderCreditMgrGrid(list){
 
     // 신용등급 크게 표시
     h += '<div style="background:'+gradeBg+';border-radius:14px;padding:16px;text-align:center;margin-bottom:14px;">';
-    h += '  <div style="font-family:Jua,sans-serif;font-size:34px;color:'+gradeColor+';line-height:1;">'+g.label+'</div>';
+    h += '  <div style="font-family:Jua,sans-serif;font-size:34px;color:'+gradeColor+';line-height:1;"><span class="bob">'+g.emoji+'</span> '+g.grade+'등급</div>';
     h += '  <div style="font-size:18px;font-weight:700;color:'+gradeColor+';margin-top:4px;">'+(s.credit||0)+'점</div>';
     h += '</div>';
 
@@ -1701,9 +1769,9 @@ function renderCreditMgrGrid(list){
     h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:10px;">';
     [{v:-5,lbl:'-5'},{v:-1,lbl:'-1'},{v:1,lbl:'+1'},{v:5,lbl:'+5'}].forEach(function(btn){
       var isPlus = btn.v > 0;
-      var bg  = isPlus?'#EFF6FF':'#FFF5F5';
-      var col = isPlus?'#3B82F6':'#EF4444';
-      var bdr = isPlus?'#BFDBFE':'#FECACA';
+      var bg  = isPlus?'#ECFDF5':'#FFF5F5';
+      var col = isPlus?'#059669':'#EF4444';
+      var bdr = isPlus?'#A7F3D0':'#FECACA';
       h += '<button onclick="adjustCreditInput(\'cmgr-delta-'+sno+'\','+btn.v+')"';
       h += ' style="background:'+bg+';color:'+col+';border:1.5px solid '+bdr+';padding:9px 0;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;font-family:Pretendard,sans-serif;">'+btn.lbl+'</button>';
     });

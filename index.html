@@ -944,10 +944,15 @@
     <div class="cit-body">
       <div class="lp">
         <div class="pl"><i class="fa-solid fa-pencil" style="color:var(--purple);"></i> 기록하기</div>
-        <div class="tog-row"><div class="tog-btn tog-dis">수입 (교사만 가능)</div><div class="tog-btn tog-on-exp"><i class="fa-solid fa-minus" style="font-size:11px;"></i> 지출 (-)</div></div>
+        <div id="w-teacher-pick" style="display:none;">
+          <select class="ssel" id="w-stu-sel" onchange="walletTeacherPick()">
+            <option value="">-- 학생을 선택하세요 --</option>
+          </select>
+        </div>
+        <div class="tog-row"><div class="tog-btn tog-dis" id="w-inc-btn" onclick="setWalletMode('inc')">수입 (교사만 가능)</div><div class="tog-btn tog-on-exp" id="w-exp-btn" onclick="setWalletMode('exp')"><i class="fa-solid fa-minus" style="font-size:11px;"></i> 지출 (-)</div></div>
         <input class="ci" id="exp-memo" placeholder="내역 (예: 간식 구매, 벌금)">
         <div class="amr"><input class="ci" id="exp-amt" type="number" placeholder="금액 입력" min="1"><span class="ul">머니</span></div>
-        <button class="sb sb-red" onclick="doExpense()"><i class="fa-solid fa-floppy-disk"></i> 저장하기</button>
+        <button class="sb sb-red" id="w-save-btn" onclick="doExpense()"><i class="fa-solid fa-floppy-disk"></i> 저장하기</button>
       </div>
       <div class="rp">
         <div class="rt">
@@ -1641,5 +1646,6 @@
 <script src="site-name.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
 <script src="ui-motion.js"></script>
+<script src="ui-colors.js"></script>
 </body>
 </html>
