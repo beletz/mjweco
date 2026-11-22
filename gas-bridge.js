@@ -13,8 +13,8 @@
   'use strict';
 
   var TZ = 'Asia/Seoul';                                  // Session.getScriptTimeZone()
-  var GLOBAL_SHEETS = { Teachers: 1, Classes: 1 };        // 모든 학급이 함께 쓰는 시트
-  var NO_CLASS_FNS = { registerTeacher: 1, loginTeacher: 1, createClass: 1 }; // 첫 인자가 학급코드가 아닌 함수
+  var GLOBAL_SHEETS = { Teachers: 1, Classes: 1, SiteSettings: 1 };        // 모든 학급이 함께 쓰는 시트
+  var NO_CLASS_FNS = { registerTeacher: 1, loginTeacher: 1, createClass: 1, getSiteSettings: 1, setSiteName: 1 }; // 첫 인자가 학급코드가 아닌 함수
   var CHUNK_CHARS = 200000;                               // 문서 1개에 담는 최대 글자 수(1MB 제한 대비)
   var HINT_KEY = 'ssm_sheet_hint_v1';
 
@@ -409,6 +409,9 @@
     }
     if (name === 'createClass' && f && typeof f === 'object') {
       return sha256(f.adminPassword).then(function (h) { f.adminPassword = h; return args; });
+    }
+    if (name === 'setSiteName') {
+      return sha256(args[0]).then(function (h) { args[0] = h; return args; });
     }
     if (name === 'loginClassAdmin') {
       return sha256(args[1]).then(function (h) { args[1] = h; return args; });

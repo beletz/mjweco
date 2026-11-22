@@ -28,7 +28,7 @@
 </div>
 
 <div class="navbar" id="main-nav">
-  <div class="brand" onclick="go('view-home')">👑 쇼미더머니 나라</div>
+  <div class="brand" onclick="go('view-home')">👑 <span data-site-name>쇼미더머니 나라</span></div>
   <div style="display:flex;align-items:center;gap:10px;">
     <button id="nav-master-btn" class="btn" style="display:none;padding:10px 18px;font-size:14px;background:var(--white);border:2px solid var(--orange);color:var(--orange);" onclick="clickNavMaster()">
       <i class="fa-solid fa-crown"></i> 마스터 대시보드
@@ -42,7 +42,7 @@
   <div class="lc">
     <div>
       <span style="color:var(--purple);font-weight:700;background:var(--pl);padding:8px 16px;border-radius:20px;font-size:15px;">경제 금융 교육 플랫폼</span>
-      <h1 style="margin-top:25px;">우리 반의<br>작은 금융 세상<br><span style="color:var(--purple)">쇼미더머니 나라</span></h1>
+      <h1 style="margin-top:25px;">우리 반의<br>작은 금융 세상<br><span data-site-name style="color:var(--purple)">쇼미더머니 나라</span></h1>
       <p>선생님은 간편하게, 아이들은 실감나게!<br>학급 화폐 경영을 웹에서 바로 펼쳐보세요.</p>
       <button class="btn" onclick="go('view-role-select')">시작하기 <i class="fa-solid fa-chevron-right"></i></button>
     </div>
@@ -130,6 +130,24 @@
       <button class="btn btn-green" style="flex-direction:column;padding:30px;" onclick="go('view-admin-login')">
         <i class="fa-solid fa-right-to-bracket" style="font-size:32px;margin-bottom:12px;"></i><span>기존 학급 관리</span>
       </button>
+    </div>
+    <button class="btn btn-outline btn-sm" style="margin-top:22px;" onclick="openSiteNameModal()">
+      <i class="fa-solid fa-pen"></i> 홈페이지 이름 바꾸기 (사이트 관리자)
+    </button>
+  </div>
+</div>
+
+<!-- ==================== 홈페이지 이름 변경 창 ==================== -->
+<div class="modal-wrap" id="site-name-modal">
+  <div class="modal">
+    <h2>✏️ 홈페이지 이름 바꾸기</h2>
+    <div class="info-box" id="site-nm-info"></div>
+    <div class="ig"><label>새 홈페이지 이름 (30자 이내)</label><input type="text" id="site-nm-new" maxlength="30"></div>
+    <div class="ig"><label>사이트 관리자 비밀번호</label><input type="password" id="site-nm-pw" placeholder="비밀번호 입력"></div>
+    <div class="ig" id="site-nm-pw2-wrap"><label>비밀번호 한 번 더 입력</label><input type="password" id="site-nm-pw2" placeholder="비밀번호 확인"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
+      <button class="btn btn-outline" onclick="closeSiteNameModal()">취소</button>
+      <button class="btn" id="site-nm-save" onclick="saveSiteName()"><i class="fa-solid fa-check"></i> 저장</button>
     </div>
   </div>
 </div>
@@ -1620,5 +1638,6 @@
 <script src="firebase-config.js"></script>
 <script src="gas-bridge.js"></script>
 <script src="app.js"></script>
+<script src="site-name.js"></script>
 </body>
 </html>

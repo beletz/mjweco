@@ -3140,3 +3140,66 @@ function chargeTaxBulk(classCode, rate, reason) {
     return { success: true, msg: count+'명 세율 '+r+'% 세금 징수 완료!' };
   } catch(e) { return { success: false, msg: e.message }; }
 }
+// ==========================================
+// [사이트] 홈페이지 이름 (사이트 관리자 비밀번호로만 변경)
+// SiteSettings: [0]항목키 [1]값   — siteName, adminPassword
+// ==========================================
+var DEFAULT_SITE_NAME = '쇼미더머니 나라';
+
+function _readSiteSettings(sheet) {
+  var map = {};
+  if (!sheet) return map;
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    var k = cleanText(data[i][0]);
+    if (k) map[k] = { row: i + 1, value: data[i][1] };
+  }
+  return map;
+}
+
+function _setSiteSetting(sheet, map, key, value) {
+  if (map[key]) sheet.getRange(map[key].row, 2).setValue(value);
+  else { sheet.appendRow([key, value]); map[key] = { row: sheet.getLastRow(), value: value }; }
+}
+
+function getSiteSettings() {
+  try {
+    var map = _readSiteSettings(SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SiteSettings'));
+    var name = map.siteName ? String(map.siteName.value).trim() : '';
+    return {
+      success: true,
+      siteName: name || DEFAULT_SITE_NAME,
+      hasPassword: !!(map.adminPassword && cleanText(map.adminPassword.value))
+    };
+  } catch(e) { return { success: false, msg: e.message }; }
+}
+
+function setSiteName(adminPassword, newName) {
+  try {
+    var pw = cleanText(adminPassword);
+    var name = String(newName || '').trim();
+    if (!name) return { success: false, msg: "새 홈페이지 이름을 입력해 주세요." };
+    if (name.length > 30) return { success: false, msg: "홈페이지 이름은 30자 이내로 입력해 주세요." };
+    if (!pw) return { success: false, msg: "사이트 관리자 비밀번호를 입력해 주세요." };
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('SiteSettings');
+    if (!sheet) {
+      sheet = ss.insertSheet('SiteSettings');
+      sheet.appendRow(['항목키','값']);
+    }
+    var map = _readSiteSettings(sheet);
+    var saved = map.adminPassword ? cleanText(map.adminPassword.value) : '';
+    var firstTime = !saved;
+    if (firstTime) _setSiteSetting(sheet, map, 'adminPassword', pw);       // 처음 입력한 비밀번호가 관리자 비밀번호가 됨
+    else if (saved !== pw) return { success: false, msg: "사이트 관리자 비밀번호가 틀렸습니다." };
+
+    _setSiteSetting(sheet, map, 'siteName', name);
+    return {
+      success: true,
+      siteName: name,
+      msg: firstTime ? "홈페이지 이름이 바뀌었습니다! 방금 입력한 비밀번호가 사이트 관리자 비밀번호로 정해졌습니다."
+                     : "홈페이지 이름이 바뀌었습니다!"
+    };
+  } catch(e) { return { success: false, msg: "오류: " + e.message }; }
+}
