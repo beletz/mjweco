@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>기존 데이터 가져오기</title>
+  <style>
+    body{font-family:sans-serif;background:#FAF6F0;color:#1E293B;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.6}
+    .card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 8px 20px rgba(0,0,0,.05);margin-bottom:16px}
+    button{background:#7C3AED;color:#fff;border:none;padding:12px 22px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    table{border-collapse:collapse;width:100%;font-size:14px}
+    td,th{border-bottom:1px solid #eee;padding:6px 8px;text-align:left}
+    #log{white-space:pre-wrap;font-family:monospace;font-size:13px;background:#F8FAFC;padding:12px;border-radius:10px;max-height:300px;overflow:auto}
+    .warn{background:#FEF3C7;color:#92400E;padding:12px;border-radius:10px}
+  </style>
+</head>
+<body>
+  <h1>📦 기존 구글 시트 데이터 가져오기</h1>
+  <div class="card warn" id="mode"></div>
+  <div class="card">
+    <p><b>1.</b> 구글 앱스 스크립트에서 내보낸 <code>.json</code> 파일을 선택하세요.</p>
+    <input type="file" id="file" accept=".json,application/json">
+    <div id="preview" style="margin-top:16px"></div>
+  </div>
+  <div class="card">
+    <p><b>2.</b> [가져오기]를 누르면 Firebase에 저장됩니다. <br>⚠️ 같은 이름의 시트 데이터가 이미 있으면 <b>덮어씁니다.</b></p>
+    <button id="go" disabled>가져오기</button>
+    <div id="log" style="margin-top:16px"></div>
+  </div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="gas-bridge.js"></script>
+<script>
+(function(){
+  var GLOBAL = { Teachers: 1, Classes: 1 };
+  var PASSWORD_COL = { Teachers: 2, Classes: 3 };   // 비밀번호 칸(0부터 셈) → 암호화해서 저장
+  var plan = null;
+  var $ = function(id){ return document.getElementById(id); };
+  function log(s){ $('log').textContent += s + '\n'; $('log').scrollTop = 1e9; }
+  function clean(s){ return String(s == null ? '' : s).replace(/[\s﻿\xA0]/g, ''); }
+
+  $('mode').textContent = window.__SSM_MODE__ === 'firebase'
+    ? '✅ Firebase에 연결된 상태입니다. 가져온 데이터는 실제 사이트에 바로 반영됩니다.'
+    : '🧪 아직 firebase-config.js 를 설정하지 않아 "로컬 테스트 모드"입니다. 이 브라우저에만 저장됩니다.';
+
+  $('file').addEventListener('change', function(e){
+    var f = e.target.files[0]; if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try { buildPlan(JSON.parse(reader.result)); }
+      catch(err){ $('preview').textContent = '파일을 읽을 수 없습니다: ' + err.message; }
+    };
+    reader.readAsText(f, 'utf-8');
+  });
+
+  function buildPlan(json){
+    var sheets = json.sheets || {};
+    plan = [];   // [{key, name, rows}]
+    var html = '<table><tr><th>시트</th><th>행 수</th><th>저장 위치</th></tr>';
+    Object.keys(sheets).forEach(function(name){
+      var rows = sheets[name] || [];
+      if (!rows.length) return;
+      var header = rows[0];
+      if (GLOBAL[name]) {
+        plan.push({ key: ssmKeyOf(name, ''), name: name, rows: rows });
+        html += '<tr><td>'+name+'</td><td>'+(rows.length-1)+'</td><td>공용</td></tr>';
+        return;
+      }
+      var col = header.map(clean).indexOf('학급코드');
+      if (col < 0) { html += '<tr><td>'+name+'</td><td>'+(rows.length-1)+'</td><td>⚠️ 학급코드 열이 없어 건너뜀</td></tr>'; return; }
+      var groups = {};
+      for (var i = 1; i < rows.length; i++) {
+        var cc = ssmNormCC(rows[i][col]);
+        if (!cc) continue;
+        (groups[cc] = groups[cc] || [header]).push(rows[i]);
+      }
+      Object.keys(groups).forEach(function(cc){
+        plan.push({ key: ssmKeyOf(name, cc), name: name, rows: groups[cc] });
+      });
+      html += '<tr><td>'+name+'</td><td>'+(rows.length-1)+'</td><td>학급별 '+Object.keys(groups).length+'개</td></tr>';
+    });
+    $('preview').innerHTML = html + '</table>';
+    $('go').disabled = !plan.length;
+  }
+
+  $('go').addEventListener('click', async function(){
+    if (!plan || !confirm('가져오기를 시작할까요? 같은 시트 데이터는 덮어씁니다.')) return;
+    $('go').disabled = true;
+    try {
+      await ssmBackend.ready;
+      for (var i = 0; i < plan.length; i++) {
+        var item = plan[i];
+        var rows = item.rows.map(function(r){ return r.slice(); });
+        var pc = PASSWORD_COL[item.name];
+        if (pc !== undefined) {
+          for (var r = 1; r < rows.length; r++) {
+            if (rows[r][pc] !== '' && rows[r][pc] != null) rows[r][pc] = await __ssmHashPassword(rows[r][pc]);
+          }
+        }
+        var chunks = ssmPackRows(rows), p = ssmPathOf(item.key);
+        await ssmBackend.run(function(tx){
+          return tx.get(p).then(function(old){
+            var oldN = old.exists ? (Number(old.data.n) || 1) : 0;
+            tx.set(p, { n: chunks.length, rows: chunks[0], updated: Date.now() });
+            for (var k = 1; k < chunks.length; k++) tx.set(p + '~' + k, { rows: chunks[k] });
+            for (var j = Math.max(1, chunks.length); j < oldN; j++) tx.del(p + '~' + j);
+          });
+        });
+        log('✔ ' + item.key.replace('|', ' / ') + '  (' + (rows.length - 1) + '행)');
+      }
+      log('\n🎉 모두 완료되었습니다! 이제 사이트(index.html)에서 로그인해 보세요.');
+    } catch (err) {
+      log('❌ 오류: ' + err.message);
+      $('go').disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
