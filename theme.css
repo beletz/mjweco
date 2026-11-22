@@ -271,3 +271,193 @@ input::placeholder{color:#A7ACB3}
 .mh-top > div:first-child > div:first-child[style*="font-size:16px"]{font-size:19px !important;font-weight:800 !important}
 .mh-top > div:first-child > div:first-child[style*="font-size:13px"],
 .mh-top > div:first-child > div > div[style*="font-size:13px"]{margin-top:3px}
+
+/* ==========================================================================
+   가독성 강화 — 작은 글씨 키우기 + 흐린 글씨 진하게
+   ========================================================================== */
+:root{ --gray:#59606A; }
+body{font-size:16px;line-height:1.55}
+
+/* 코드 안에 직접 적힌 작은 글씨 크기를 한 단계씩 키움 (아이콘·배지 제외) */
+body [style*="font-size:10px"]:not(i):not(.mh-badge){font-size:12.5px !important}
+body [style*="font-size:11px"]:not(i):not(.mh-badge){font-size:13px !important}
+body [style*="font-size:12px"]:not(i):not(.mh-badge){font-size:14px !important}
+body [style*="font-size:13px"]:not(i){font-size:15px !important}
+body [style*="font-size:14px"]:not(i){font-size:15.5px !important}
+
+/* 너무 흐린 회색 글씨를 읽기 좋게 */
+body [style*="color:#94a3b8" i]:not(i){color:#69717C !important}
+body [style*="color:#cbd5e1" i]:not(i),
+body [style*="color:#aaa" i]:not(i),
+body [style*="color:#999" i]:not(i){color:#8A919B !important}
+body [style*="color:#555" i],body [style*="color:#444" i],body [style*="color:#333" i]{color:var(--ink-2) !important}
+
+/* 공통 요소 글씨 크기 */
+.back{font-size:15px}
+.btn-sm{font-size:14px;padding:9px 14px}
+.sb{font-size:16px;padding:14px}
+.ig label,.bf label{font-size:14.5px}
+.ig input,.ig select,.ci,.ssel,.bf input,.ar input,.ar select{font-size:15.5px}
+.info-box{font-size:14.5px;line-height:1.7}
+.empty-msg{font-size:15px;color:#8A919B;padding:40px 0}
+.pill,.no-bdg{font-size:13px}
+.st{font-size:20px;margin-bottom:18px}
+.mh-tab{font-size:15px}
+.dash-tile h3{font-size:18.5px}
+.dash-tile p{font-size:14px;line-height:1.5}
+.stb{font-size:15px}
+.stb th{font-size:13.5px;padding:12px}
+.stb td{padding:12px}
+.ac,.bc,.cr{font-size:14px}
+.code-bdg{font-size:14px}
+
+/* 용돈기입장 */
+.cit-body{grid-template-columns:340px 1fr;gap:20px}
+.lp{padding:24px}
+.pl{font-size:14px;letter-spacing:0;text-transform:none;color:var(--ink-2);font-weight:800;margin-bottom:14px}
+.tog-btn{font-size:14.5px;line-height:1.35;padding:11px 8px;font-weight:800}
+.ul{font-size:14px;color:var(--gray)}
+.rt{padding:20px 24px 0}
+.rt-title{font-size:18px;font-weight:800}
+.cnt-bdg{font-size:13px;padding:4px 10px}
+.dt{font-size:15.5px;padding:11px 16px}
+.tc{padding:22px 24px}
+.crb{padding:18px 20px}
+.crc{width:60px;height:60px}
+.cgn{font-size:22px}
+.cit{font-size:17px}
+.cis{font-size:14.5px}
+.ag{gap:14px}
+.ac2{padding:18px}
+.ai{font-size:22px;margin-bottom:8px}
+.al{font-size:13.5px;color:var(--gray);margin-bottom:6px;font-weight:700}
+.av{font-size:21px;font-weight:800}
+.ac2.tot .av{font-size:24px}
+.txt{font-size:15px}
+.txt th{font-size:14px;padding:12px 8px;color:var(--gray)}
+.txt td{padding:13px 8px}
+.td{font-size:14px;color:var(--gray)}
+.tt{font-size:13px;padding:3px 8px}
+
+/* 은행 */
+.dep-type{font-size:18px}
+.dep-meta{font-size:14px}
+.dep-amt{font-size:18px}
+.dep-interest{font-size:13.5px}
+.rate-week{font-size:21px}
+.rate-pct{font-size:15px}
+.bank-form-panel label{font-size:15px !important}
+.bank-form-panel select,.bank-form-panel input[type="number"],.bank-form-panel input[type="date"]{
+  font-size:15.5px;padding:12px 14px !important;border-radius:var(--r-md) !important;
+  border:1px solid var(--line-strong) !important;background:#fff;
+}
+.bank-form-panel select:focus,.bank-form-panel input:focus{border-color:var(--purple) !important;box-shadow:var(--focus);outline:none}
+#banker-rates-info{font-size:14.5px !important;line-height:1.8;background:#F3F6FF !important;border-left-color:var(--blue) !important;color:#2A3B66 !important}
+[style*="background:#7b68ee" i]{background:var(--blue) !important;border-radius:var(--r-md) !important;font-size:17px !important;transition:background .15s}
+[style*="background:#7b68ee" i]:hover{background:#1F58E8 !important}
+
+/* ==========================================================================
+   색감 — 회색 일색에서 벗어나 밝고 알록달록하게
+   ========================================================================== */
+:root{
+  --t-green:#E9F8F1; --t-blue:#EAF1FF; --t-red:#FFEDEF; --t-orange:#FFF2E3;
+  --t-yellow:#FFF8DB; --t-cyan:#E3F7FA; --t-purple:#F1EDFF; --t-slate:#EEF1F5;
+  --c-purple:#7B5CF0;
+}
+body{background:#FBF8F2}
+
+/* 대시보드 머리 위 색 띠 */
+.mh{border-top:0}
+.mh::before{
+  content:"";display:block;height:5px;
+  background:linear-gradient(90deg,
+    #14A46C 0 16.6%, #2F6BFF 16.6% 33.3%, #E8A90C 33.3% 50%,
+    #F28C28 50% 66.6%, #EF4A5A 66.6% 83.3%, #7B5CF0 83.3% 100%);
+}
+
+/* 메뉴 타일 — 아이콘 색에 맞춰 카드에 옅은 색 */
+.dash-tile:has(.tile-icon[style*="--green"]){background:linear-gradient(180deg,var(--t-green),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--blue"]){background:linear-gradient(180deg,var(--t-blue),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--red"]){background:linear-gradient(180deg,var(--t-red),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--orange"]){background:linear-gradient(180deg,var(--t-orange),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--yellow"]){background:linear-gradient(180deg,var(--t-yellow),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--cyan"]){background:linear-gradient(180deg,var(--t-cyan),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--purple"]){background:linear-gradient(180deg,var(--t-purple),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--indigo"]){background:linear-gradient(180deg,var(--t-purple),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--slate"]){background:linear-gradient(180deg,var(--t-slate),#fff 70%)}
+.dash-tile:has(.tile-icon[style*="--green"]):hover{border-color:#9EDFC2}
+.dash-tile:has(.tile-icon[style*="--blue"]):hover{border-color:#A9C3FF}
+.dash-tile:has(.tile-icon[style*="--red"]):hover{border-color:#F7B0B8}
+.dash-tile:has(.tile-icon[style*="--orange"]):hover{border-color:#F8C894}
+.dash-tile:has(.tile-icon[style*="--yellow"]):hover{border-color:#F0D476}
+.dash-tile:has(.tile-icon[style*="--cyan"]):hover{border-color:#93DCE6}
+.dash-tile:has(.tile-icon[style*="--purple"]):hover,.dash-tile:has(.tile-icon[style*="--indigo"]):hover{border-color:#C5B6FA}
+.tile-icon[style*="--purple"]{background:var(--c-purple) !important}
+.dash-tile.locked{background:#fff !important}
+
+/* 내용 카드 — 제목 아이콘 색으로 위쪽 띠 + 아이콘 동그라미 */
+.sc{border-top:4px solid var(--line-strong)}
+.sc:has(> .st > i[style*="--blue"]){border-top-color:var(--blue)}
+.sc:has(> .st > i[style*="--green"]){border-top-color:var(--green)}
+.sc:has(> .st > i[style*="--red"]){border-top-color:var(--red)}
+.sc:has(> .st > i[style*="--orange"]){border-top-color:var(--orange)}
+.sc:has(> .st > i[style*="--yellow"]){border-top-color:var(--yellow)}
+.sc:has(> .st > i[style*="--cyan"]){border-top-color:var(--cyan)}
+.sc:has(> .st > i[style*="--purple"]),.sc:has(> .st > i[style*="--indigo"]){border-top-color:var(--c-purple)}
+.st > i:first-child{
+  width:36px;height:36px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:16px;background:var(--t-slate);flex-shrink:0;
+}
+.st > i[style*="--blue"]:first-child{background:var(--t-blue)}
+.st > i[style*="--green"]:first-child{background:var(--t-green)}
+.st > i[style*="--red"]:first-child{background:var(--t-red)}
+.st > i[style*="--orange"]:first-child{background:var(--t-orange)}
+.st > i[style*="--yellow"]:first-child{background:var(--t-yellow)}
+.st > i[style*="--cyan"]:first-child{background:var(--t-cyan)}
+.st > i[style*="--purple"]:first-child,.st > i[style*="--indigo"]:first-child{background:var(--t-purple);color:var(--c-purple) !important}
+
+/* 은행청장 화면 두 패널 */
+.bank-form-panel{border-top:4px solid var(--blue);background:#fff}
+.bank-list-panel{border-top:4px solid var(--green);background:#fff}
+
+/* 용돈기입장 */
+.lp{border-top:4px solid var(--red)}
+.rp{border-top:4px solid var(--blue)}
+.crb{background:linear-gradient(90deg,var(--t-purple),var(--t-blue));border:1px solid #DCD3FF}
+.crc{border-color:#DCD3FF}
+.cgn,.crc i{color:var(--c-purple) !important}
+.cit{color:#3B2A8C}
+.cis{color:#5B4BB8}
+.ac2.tot{background:var(--t-yellow);border-color:#F3DE8A}
+.ac2:has(.av[style*="--blue"]){background:var(--t-blue);border-color:#C9DAFF}
+.ac2:has(.av[style*="--green"]){background:var(--t-green);border-color:#BDE9D5}
+.txt thead th{background:#F7F5EF}
+.txt tbody tr:nth-child(even) td{background:#FCFBF8}
+
+/* 표 머리 색 */
+.stb th{background:#F4F2EC}
+
+/* 마스터 탭 — 고른 탭은 파란색 */
+.mh-tab.act{background:var(--t-blue);color:var(--blue)}
+
+/* 정보 상자 */
+.info-box{background:var(--t-blue);border-color:#CFDDFF}
+
+/* 첫 화면 카드 4칸 색 */
+.deco-item:nth-child(1){background:var(--t-orange)}
+.deco-item:nth-child(2){background:var(--t-blue)}
+.deco-item:nth-child(3){background:var(--t-green)}
+.deco-item:nth-child(4){background:var(--t-red)}
+.deco-item:nth-child(1):hover{background:#FFE9CF}
+.deco-item:nth-child(2):hover{background:#DDE8FF}
+.deco-item:nth-child(3):hover{background:#D9F3E7}
+.deco-item:nth-child(4):hover{background:#FFDDE1}
+
+/* 역할 선택 */
+.role-box.student{border-left:5px solid var(--green) !important}
+.role-box.teacher{border-left:5px solid var(--blue) !important}
+
+@media (max-width:860px){ .cit-body{grid-template-columns:1fr} }
+
+/* 화면 위쪽 제목 크게 */
+.mh-top [style*="font-size:16px"][style*="font-weight:700"]{font-size:20px !important;font-weight:800 !important}
