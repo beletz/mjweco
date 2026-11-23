@@ -3230,3 +3230,245 @@ function setSiteName(adminPassword, newName) {
     };
   } catch(e) { return { success: false, msg: "오류: " + e.message }; }
 }
+
+// ==========================================
+// [아바타] 나의 아바타 꾸미기
+// Avatars:      [0]학급코드 [1]학생번호 [2]착용(JSON) [3]보유(JSON 배열)
+// AvatarPrices: [0]학급코드 [1]아이템ID [2]가격 [3]판매(Y/N)   ← 선생님이 바꾼 가격만 저장
+// 기본 의류(가격 0)는 누구나 무료로 착용. 멋질수록 비쌈.
+// ==========================================
+var AVATAR_SLOTS = ['bg','skin','hair','top','hat','face','pet'];
+var AVATAR_ITEMS = [
+  // 배경
+  {id:'bg_sky',     slot:'bg',   name:'하늘색 배경',     price:0},
+  {id:'bg_mint',    slot:'bg',   name:'민트 배경',       price:0},
+  {id:'bg_cream',   slot:'bg',   name:'크림 배경',       price:0},
+  {id:'bg_dots',    slot:'bg',   name:'물방울 무늬',     price:50},
+  {id:'bg_class',   slot:'bg',   name:'우리 반 칠판',    price:150},
+  {id:'bg_night',   slot:'bg',   name:'별이 빛나는 밤',  price:400},
+  {id:'bg_rainbow', slot:'bg',   name:'무지개 언덕',     price:800},
+  {id:'bg_palace',  slot:'bg',   name:'황금 궁전',       price:2000},
+  // 피부색
+  {id:'sk_1', slot:'skin', name:'피부색 1', price:0},
+  {id:'sk_2', slot:'skin', name:'피부색 2', price:0},
+  {id:'sk_3', slot:'skin', name:'피부색 3', price:0},
+  {id:'sk_4', slot:'skin', name:'피부색 4', price:0},
+  // 머리
+  {id:'hr_short',   slot:'hair', name:'기본 짧은 머리',  price:0},
+  {id:'hr_bob',     slot:'hair', name:'기본 단발',       price:0},
+  {id:'hr_spiky',   slot:'hair', name:'기본 삐죽 머리',  price:0},
+  {id:'hr_pony',    slot:'hair', name:'포니테일',        price:80},
+  {id:'hr_twin',    slot:'hair', name:'핑크 양갈래',     price:300},
+  {id:'hr_gold',    slot:'hair', name:'금발 웨이브',     price:600},
+  {id:'hr_rainbow', slot:'hair', name:'무지개 머리',     price:1500},
+  // 옷
+  {id:'tp_white',   slot:'top',  name:'기본 흰 티셔츠',  price:0},
+  {id:'tp_gray',    slot:'top',  name:'기본 회색 맨투맨',price:0},
+  {id:'tp_navy',    slot:'top',  name:'기본 남색 티셔츠',price:0},
+  {id:'tp_stripe',  slot:'top',  name:'줄무늬 티셔츠',   price:60},
+  {id:'tp_hoodie',  slot:'top',  name:'노랑 후드티',     price:120},
+  {id:'tp_school',  slot:'top',  name:'교복 셔츠와 넥타이', price:250},
+  {id:'tp_soccer',  slot:'top',  name:'축구 유니폼',     price:400},
+  {id:'tp_suit',    slot:'top',  name:'정장과 나비넥타이', price:800},
+  {id:'tp_space',   slot:'top',  name:'우주복',          price:1200},
+  {id:'tp_king',    slot:'top',  name:'왕실 망토',       price:2500},
+  {id:'tp_gold',    slot:'top',  name:'황금 턱시도',     price:4000},
+  // 모자
+  {id:'hat_none',   slot:'hat',  name:'모자 없음',       price:0},
+  {id:'hat_cap',    slot:'hat',  name:'빨간 야구모자',   price:50},
+  {id:'hat_ribbon', slot:'hat',  name:'리본 머리띠',     price:80},
+  {id:'hat_beanie', slot:'hat',  name:'털 비니',         price:100},
+  {id:'hat_straw',  slot:'hat',  name:'밀짚모자',        price:200},
+  {id:'hat_wizard', slot:'hat',  name:'마법사 모자',     price:500},
+  {id:'hat_crown',  slot:'hat',  name:'황금 왕관',       price:3000},
+  // 안경·얼굴
+  {id:'face_none',  slot:'face', name:'안경 없음',       price:0},
+  {id:'face_round', slot:'face', name:'동그란 안경',     price:40},
+  {id:'face_sun',   slot:'face', name:'선글라스',        price:150},
+  {id:'face_heart', slot:'face', name:'하트 안경',       price:300},
+  {id:'face_mono',  slot:'face', name:'신사 외눈 안경',  price:700},
+  {id:'face_star',  slot:'face', name:'스타 선글라스',   price:1000},
+  // 펫
+  {id:'pet_none',   slot:'pet',  name:'펫 없음',         price:0},
+  {id:'pet_chick',  slot:'pet',  name:'병아리',          price:200},
+  {id:'pet_cat',    slot:'pet',  name:'고양이',          price:500},
+  {id:'pet_dog',    slot:'pet',  name:'강아지',          price:500},
+  {id:'pet_dragon', slot:'pet',  name:'아기 용',         price:3000}
+];
+var AVATAR_DEFAULT = {bg:'bg_sky', skin:'sk_1', hair:'hr_short', top:'tp_white', hat:'hat_none', face:'face_none', pet:'pet_none'};
+
+function getOrCreateAvatarsSheet(ss) {
+  var sheet = ss.getSheetByName('Avatars');
+  if (!sheet) { sheet = ss.insertSheet('Avatars'); sheet.appendRow(['학급코드','학생번호','착용','보유']); }
+  return sheet;
+}
+function getOrCreateAvatarPricesSheet(ss) {
+  var sheet = ss.getSheetByName('AvatarPrices');
+  if (!sheet) { sheet = ss.insertSheet('AvatarPrices'); sheet.appendRow(['학급코드','아이템ID','가격','판매']); }
+  return sheet;
+}
+function _parseJson(text, fallback) {
+  try { var v = JSON.parse(String(text || '')); return v == null ? fallback : v; } catch (e) { return fallback; }
+}
+// 학급의 실제 판매 목록 (선생님이 바꾼 가격 반영)
+function _avatarShopMap(ss, cc) {
+  var map = {};
+  AVATAR_ITEMS.forEach(function (it) { map[it.id] = { id: it.id, slot: it.slot, name: it.name, basePrice: it.price, price: it.price, onSale: true }; });
+  var data = getOrCreateAvatarPricesSheet(ss).getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (cleanText(data[i][0]) !== cc) continue;
+    var m = map[String(data[i][1])];
+    if (!m) continue;
+    var p = parseInt(data[i][2]);
+    if (!isNaN(p) && p >= 0) m.price = p;
+    m.onSale = String(data[i][3]) !== 'N';
+  }
+  return map;
+}
+function _cleanEquipped(eq, owned, shop) {
+  var out = {};
+  AVATAR_SLOTS.forEach(function (slot) {
+    var id = eq && eq[slot], it = id && shop[id];
+    var ok = it && it.slot === slot && (it.price === 0 || owned.indexOf(id) >= 0);
+    out[slot] = ok ? id : AVATAR_DEFAULT[slot];
+  });
+  return out;
+}
+function _findAvatarRow(data, cc, sno) {
+  for (var i = 1; i < data.length; i++) {
+    if (cleanText(data[i][0]) === cc && cleanText(String(data[i][1])) === sno) return i;
+  }
+  return -1;
+}
+
+function getAvatarShop(classCode) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var map = _avatarShopMap(ss, cleanText(classCode));
+    return { success: true, slots: AVATAR_SLOTS, items: AVATAR_ITEMS.map(function (it) { return map[it.id]; }), defaults: AVATAR_DEFAULT };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+function getMyAvatar(classCode, studentNo) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo));
+    var shop = _avatarShopMap(ss, cc);
+    var data = getOrCreateAvatarsSheet(ss).getDataRange().getValues();
+    var r = _findAvatarRow(data, cc, sno);
+    var owned = r >= 0 ? _parseJson(data[r][3], []) : [];
+    var eq = _cleanEquipped(r >= 0 ? _parseJson(data[r][2], {}) : {}, owned, shop);
+    var card = 0, name = '';
+    var stu = getOrCreateStudentsSheet(ss).getDataRange().getValues();
+    for (var i = 1; i < stu.length; i++) {
+      if (cleanText(stu[i][0]) === cc && cleanText(String(stu[i][1])) === sno) { card = Number(stu[i][4]) || 0; name = stu[i][2] || ''; break; }
+    }
+    return { success: true, equipped: eq, owned: owned, card: card, name: name };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+function getClassAvatars(classCode) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var cc = cleanText(classCode);
+    var shop = _avatarShopMap(ss, cc);
+    var data = getOrCreateAvatarsSheet(ss).getDataRange().getValues();
+    var map = {};
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) !== cc) continue;
+      map[String(data[i][1])] = _cleanEquipped(_parseJson(data[i][2], {}), _parseJson(data[i][3], []), shop);
+    }
+    return { success: true, map: map, defaults: AVATAR_DEFAULT };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+function buyAvatarItem(classCode, studentNo, itemId) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo));
+    var it = _avatarShopMap(ss, cc)[String(itemId)];
+    if (!it) return { success: false, msg: '없는 아이템입니다.' };
+    if (!it.onSale) return { success: false, msg: '지금은 판매하지 않는 아이템입니다.' };
+    if (it.price <= 0) return { success: false, msg: '무료 아이템은 사지 않아도 바로 입을 수 있어요.' };
+
+    var avSheet = getOrCreateAvatarsSheet(ss);
+    var avData = avSheet.getDataRange().getValues();
+    var r = _findAvatarRow(avData, cc, sno);
+    var owned = r >= 0 ? _parseJson(avData[r][3], []) : [];
+    if (owned.indexOf(it.id) >= 0) return { success: false, msg: '이미 가지고 있는 아이템입니다.' };
+
+    var stuSheet = getOrCreateStudentsSheet(ss);
+    var stu = stuSheet.getDataRange().getValues();
+    var row = -1, card = 0;
+    for (var i = 1; i < stu.length; i++) {
+      if (cleanText(stu[i][0]) === cc && cleanText(String(stu[i][1])) === sno) { row = i + 1; card = Number(stu[i][4]) || 0; break; }
+    }
+    if (row === -1) return { success: false, msg: '학생 정보를 찾을 수 없습니다.' };
+    if (card < it.price) return { success: false, msg: '카드 잔액이 부족해요. (필요: ' + it.price + ' 머니 / 보유: ' + card + ' 머니)' };
+
+    var newCard = card - it.price;
+    stuSheet.getRange(row, 5).setValue(newCard);
+    getOrCreateTransSheet(ss).appendRow([getTodayStr(), cc, sno, '[아바타] ' + it.name, '', it.price, newCard, '아바타']);
+    owned.push(it.id);
+    if (r >= 0) avSheet.getRange(r + 1, 4).setValue(JSON.stringify(owned));
+    else avSheet.appendRow([cc, sno, JSON.stringify(AVATAR_DEFAULT), JSON.stringify(owned)]);
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    SpreadsheetApp.flush();
+    return { success: true, msg: it.name + ' 구매 완료!', newCard: newCard, owned: owned };
+  } catch (e) {
+    if (e.message.match(/lock/i)) return { success: false, msg: '🚦 현재 처리량이 많습니다. 2~3초 뒤에 다시 시도해주세요.' };
+    return { success: false, msg: e.message };
+  } finally { lock.releaseLock(); }
+}
+
+function saveAvatar(classCode, studentNo, equippedJson) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo));
+    var shop = _avatarShopMap(ss, cc);
+    var want = typeof equippedJson === 'string' ? _parseJson(equippedJson, {}) : (equippedJson || {});
+    var avSheet = getOrCreateAvatarsSheet(ss);
+    var avData = avSheet.getDataRange().getValues();
+    var r = _findAvatarRow(avData, cc, sno);
+    var owned = r >= 0 ? _parseJson(avData[r][3], []) : [];
+    var bad = [];
+    AVATAR_SLOTS.forEach(function (slot) {
+      var it = shop[want[slot]];
+      if (it && it.slot === slot && it.price > 0 && owned.indexOf(it.id) < 0) bad.push(it.name);
+    });
+    if (bad.length) return { success: false, msg: '아직 사지 않은 아이템이 있어요: ' + bad.join(', ') };
+    var eq = _cleanEquipped(want, owned, shop);
+    if (r >= 0) avSheet.getRange(r + 1, 3).setValue(JSON.stringify(eq));
+    else avSheet.appendRow([cc, sno, JSON.stringify(eq), '[]']);
+    return { success: true, msg: '아바타를 저장했어요!', equipped: eq };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 선생님: 아이템 가격·판매 여부 바꾸기  changesJson = [{id, price, onSale}]
+function setAvatarPrices(classCode, changesJson) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var cc = cleanText(classCode);
+    var changes = typeof changesJson === 'string' ? _parseJson(changesJson, []) : (changesJson || []);
+    var valid = {};
+    AVATAR_ITEMS.forEach(function (it) { valid[it.id] = it; });
+    var sheet = getOrCreateAvatarPricesSheet(ss);
+    var data = sheet.getDataRange().getValues();
+    var rowOf = {};
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) rowOf[String(data[i][1])] = i + 1;
+    var n = 0;
+    changes.forEach(function (c) {
+      var base = valid[c.id];
+      if (!base) return;
+      var p = parseInt(c.price);
+      if (isNaN(p) || p < 0) p = base.price;
+      var sale = c.onSale === false ? 'N' : 'Y';
+      if (rowOf[c.id]) sheet.getRange(rowOf[c.id], 3, 1, 2).setValues([[p, sale]]);
+      else sheet.appendRow([cc, c.id, p, sale]);
+      n++;
+    });
+    return { success: true, msg: n + '개 아이템 설정을 저장했어요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
+}

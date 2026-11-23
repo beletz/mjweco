@@ -268,6 +268,7 @@ function loadList(){
     if(!r.success){showToast('⚠️ '+r.msg);return;}
     _stuList=r.list;
     renderList(r.list);
+    if(typeof fillListAvatars==='function') fillListAvatars(_adminCC);
     $('stu-cnt-pill').textContent=r.list.length+'명';
     refreshAllSelects();
   }).getStudentList(_adminCC);
@@ -287,7 +288,7 @@ function renderList(list){
       // 체크박스
       '<td style="text-align:center;"><input type="checkbox" class="stu-check" value="'+sno+'" style="width:16px;height:16px;cursor:pointer;accent-color:var(--purple);"></td>'+
       // 번호
-      '<td><span class="no-bdg">'+sno+'</span>'+(isTeacherSno(sno)?'<span class="teacher-bdg">👑 선생님</span>':'')+(isBankrupt?'<span class="bankrupt-badge" style="margin-left:4px;">파산</span>':'')+'</td>'+
+      '<td><span class="list-av" data-av-sno="'+sno+'"></span><span class="no-bdg">'+sno+'</span>'+(isTeacherSno(sno)?'<span class="teacher-bdg">👑 선생님</span>':'')+(isBankrupt?'<span class="bankrupt-badge" style="margin-left:4px;">파산</span>':'')+'</td>'+
       // 이름
       '<td><input value="'+esc(s.name)+'" placeholder="이름" id="nm-'+sno+'" style="width:90px;"></td>'+
       // 직업
@@ -928,6 +929,7 @@ function initStudentWallet(r){
 
 var _jobTiles=[
   {name:'국민(용돈기입장)',icon:'fa-users',bg:'var(--green)',desc:'나의 용돈기입장 및 자산 확인',view:'view-citizen-wallet',jobs:['__ALL__']},
+  {name:'아바타 꾸미기',icon:'fa-shirt',bg:'var(--red)',desc:'옷·머리·펫으로 나를 꾸며요',view:'view-avatar',jobs:['__ALL__']},
   {name:'은행청장',icon:'fa-building-columns',bg:'var(--blue)',desc:'예금 서비스 관리',view:'view-bank',jobs:['은행청장']},
   {name:'국세청장',icon:'fa-shield-heart',bg:'var(--red)',desc:'세금 부과 및 예산 관리',view:'view-tax-office',jobs:['국세청장']},
   {name:'신용등급관리위원장',icon:'fa-chart-line',bg:'var(--purple)',desc:'학생 신용점수 조정',view:'view-credit-mgr',jobs:['신용등급관리위원장']},
@@ -949,6 +951,8 @@ function renderStudentTiles(){
     if(isUnlocked){
       if(j.view==='view-bank'){
         clickAction='onclick="openBank()"';
+      } else if(j.view==='view-avatar'){
+        clickAction='onclick="openAvatar()"';
       } else {
         clickAction='onclick="openStudentPanel(\''+j.view+'\')"';
       }
@@ -960,6 +964,7 @@ function renderStudentTiles(){
       '<h3>'+j.name+'</h3><p>'+j.desc+'</p></div>';
   });
   grid.innerHTML=html;
+  if(typeof refreshDashAvatar==='function') refreshDashAvatar();
 }
 
 function openStudentPanel(viewId){
