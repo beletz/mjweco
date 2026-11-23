@@ -1608,6 +1608,33 @@ function createDepositByBankerWithCredit(classCode, studentNo, weeks, amount, fi
   }
 }
 
+// ── 교사(마스터) 본인 계정: 학생번호 0번, 직업 대통령 ──
+// 학급에 들어올 때마다 호출. 없으면 새로 만들고, 있으면 그대로 돌려줌.
+function ensureTeacherAccount(classCode, teacherName) {
+  try {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = getOrCreateStudentsSheet(ss);
+    var data  = sheet.getDataRange().getValues();
+    var cc    = cleanText(classCode);
+    var sno   = '0';
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) === cc && cleanText(String(data[i][1])) === sno) {
+        return {
+          success: true, created: false, studentNo: sno,
+          name: data[i][2] || '', job: data[i][3] || '',
+          card: Number(data[i][4]) || 0, bank: Number(data[i][5]) || 0,
+          credit: Number(data[i][6]) || 0, code: data[i][7] || ''
+        };
+      }
+    }
+    var name = String(teacherName || '').trim() || '선생님';
+    var code = generateCode();
+    sheet.appendRow([cc, sno, name, '대통령', 0, 0, 0, code]);
+    try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
+    return { success: true, created: true, studentNo: sno, name: name, job: '대통령', card: 0, bank: 0, credit: 0, code: code };
+  } catch(e) { return { success: false, msg: e.message }; }
+}
+
 // ── 교사 테스트 계정 조회 ──
 function getTeacherTestStudent(classCode, studentNo) {
   try {

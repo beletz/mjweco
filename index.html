@@ -243,35 +243,6 @@
     </div>
   </div>
   
-  <!-- 결과 박스 -->
-  <div id="test-account-result" style="display:none;margin-top:16px;background:white;border:1.5px solid #FED7AA;border-radius:14px;padding:18px 20px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-      <div>
-        <div style="font-family:'Jua',sans-serif;font-size:18px;color:#1E293B;margin-bottom:4px;">
-          <span id="tr-sno-label"></span>번 &nbsp;<span id="tr-name-label"></span>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:13px;color:#64748B;">
-          <span>💳 카드: <strong id="tr-card">-</strong></span>
-          <span>🏦 은행: <strong id="tr-bank">-</strong></span>
-          <span>⭐ 신용: <strong id="tr-credit">-</strong></span>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <div style="background:#FFF7ED;border:1.5px solid #FED7AA;border-radius:10px;padding:10px 16px;text-align:center;">
-          <div style="font-size:11px;color:#92400E;margin-bottom:3px;">접속 코드</div>
-          <div id="tr-code-display" style="font-family:monospace;font-size:20px;font-weight:700;color:#C2410C;letter-spacing:3px;">------</div>
-        </div>
-        <button onclick="copyTestCode()"
-          style="background:#F59E0B;color:white;border:none;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;">
-          <i class="fa-solid fa-copy"></i> 코드 복사
-        </button>
-        <button onclick="loginAsTestStudent()"
-          style="background:#10B981;color:white;border:none;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;">
-          <i class="fa-solid fa-right-to-bracket"></i> 바로 입장
-        </button>
-      </div>
-    </div>
-  </div>
 </div>
 
   <!-- CITIZENS PANEL -->
@@ -333,34 +304,6 @@
       </div>
     </div>
 
-    <!-- ★ 교사 테스트 계정 -->
-    <div class="sc" style="margin-top:18px;border:2px dashed var(--orange);background:#FFFBEB;">
-      <div class="st">
-        <i class="fa-solid fa-flask" style="color:var(--orange);"></i> 교사 테스트 계정
-        <span style="font-size:12px;font-weight:400;color:#92400E;margin-left:6px;">직접 학생처럼 테스트할 수 있는 전용 계정입니다.</span>
-      </div>
-      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:12px;font-weight:600;color:#92400E;margin-bottom:5px;">테스트 학생번호</div>
-          <input type="text" id="test-sno" placeholder="예: 99" maxlength="10"
-            style="width:100px;padding:10px 12px;border:2px solid #FED7AA;border-radius:11px;font-size:14px;font-family:'Pretendard',sans-serif;background:white;outline:none;">
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:#92400E;margin-bottom:5px;">이름</div>
-          <input type="text" id="test-name" placeholder="예: 선생님테스트"
-            style="width:140px;padding:10px 12px;border:2px solid #FED7AA;border-radius:11px;font-size:14px;font-family:'Pretendard',sans-serif;background:white;outline:none;">
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:#92400E;margin-bottom:5px;">접속 코드 직접 설정</div>
-          <input type="text" id="test-code" placeholder="예: TEST99" maxlength="10"
-            style="width:130px;padding:10px 12px;border:2px solid #FED7AA;border-radius:11px;font-size:14px;font-family:monospace;letter-spacing:2px;text-transform:uppercase;background:white;outline:none;">
-        </div>
-        <button onclick="setupTestAccount()"
-          style="background:var(--orange);color:white;border:none;padding:11px 20px;border-radius:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;height:42px;">
-          <i class="fa-solid fa-flask"></i> 계정 생성 / 조회
-        </button>
-      </div>
-    </div><!-- /sc 교사 테스트 계정 -->
   </div><!-- /md-citizens -->
 
 <!-- SALARY PANEL -->

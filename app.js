@@ -143,10 +143,12 @@ function doCreateClass(){
     alert(r.msg);
     if(r.success){
       _adminCC=form.classCode;
+      _cc=form.classCode; _sno=''; _myJob='';
       $('dash-title').innerText=form.adminName;
       go('view-master-dashboard'); // ★ 마스터 대시보드로 이동
       loadList();
       refreshMasterPendingBadges();
+      ensureTeacherAccountFor(form.classCode, form.adminName);
     }
   }).createClass(form);
 }
@@ -160,6 +162,7 @@ function doAdminLogin(){
     if(r.success){
       _adminCC=r.classCode;
       _cc=r.classCode;
+      _sno=''; _myJob='';
       $('dash-title').innerText=r.adminName;
       
       // 1. 우측 상단 내 직업 표시에 '선생님' 띄우기
@@ -173,6 +176,7 @@ function doAdminLogin(){
       loadList();
       loadBankSettings();
       refreshMasterPendingBadges();
+      ensureTeacherAccountFor(r.classCode, r.adminName);
 
       var sessionData={role:'teacher',classCode:r.classCode,adminName:r.adminName};
       sessionStorage.setItem('smtm_session',JSON.stringify(sessionData));
@@ -283,7 +287,7 @@ function renderList(list){
       // 체크박스
       '<td style="text-align:center;"><input type="checkbox" class="stu-check" value="'+sno+'" style="width:16px;height:16px;cursor:pointer;accent-color:var(--purple);"></td>'+
       // 번호
-      '<td><span class="no-bdg">'+sno+'</span>'+(isBankrupt?'<span class="bankrupt-badge" style="margin-left:4px;">파산</span>':'')+'</td>'+
+      '<td><span class="no-bdg">'+sno+'</span>'+(isTeacherSno(sno)?'<span class="teacher-bdg">👑 선생님</span>':'')+(isBankrupt?'<span class="bankrupt-badge" style="margin-left:4px;">파산</span>':'')+'</td>'+
       // 이름
       '<td><input value="'+esc(s.name)+'" placeholder="이름" id="nm-'+sno+'" style="width:90px;"></td>'+
       // 직업
@@ -309,8 +313,8 @@ function renderList(list){
 }
 
 function jobOptions(selected){
-  var jobs=['','은행청장','국세청장','신용등급관리위원장','재산조사국장','부동산 중개인','통계청장','도매상인','경찰서장','증권회사'];
-  var labels={'':'국민','은행청장':'은행청장','국세청장':'국세청장','신용등급관리위원장':'신용등급관리위원장','재산조사국장':'재산조사국장','부동산 중개인':'부동산 중개인','통계청장':'통계청장','도매상인':'도매상인','경찰서장':'경찰서장','증권회사':'증권회사'};
+  var jobs=['','대통령','은행청장','국세청장','신용등급관리위원장','재산조사국장','부동산 중개인','통계청장','도매상인','경찰서장','증권회사'];
+  var labels={'':'국민','대통령':'대통령','은행청장':'은행청장','국세청장':'국세청장','신용등급관리위원장':'신용등급관리위원장','재산조사국장':'재산조사국장','부동산 중개인':'부동산 중개인','통계청장':'통계청장','도매상인':'도매상인','경찰서장':'경찰서장','증권회사':'증권회사'};
   return jobs.map(function(j){return '<option value="'+j+'"'+(j===(selected||'')?'selected':'')+'>'+labels[j]+'</option>';}).join('');
 }
 
@@ -1635,7 +1639,7 @@ function doLottery(){
       var bank=parseInt(($('s-bank').textContent||'0').replace(/[^0-9]/g,''))||0;
       $('s-total').textContent=(Number(r.newCard)+bank).toLocaleString()+' 머니';
     } else alert(r.msg);
-  }).buyLottery(_cc,_sno,amt);
+  }).buyLottery(_cc||_adminCC,buyerSno(),amt);
 }
 
 // ============================================================
@@ -1679,7 +1683,7 @@ function doBuyRE(assetNo){
   google.script.run.withSuccessHandler(function(r){
     if(r.success){showToast('✅ '+r.msg);$('s-card').textContent=Number(r.newCard).toLocaleString()+' 머니';loadRealEstate();}
     else alert(r.msg);
-  }).buyRealEstate(_cc,_sno,assetNo);
+  }).buyRealEstate(_cc||_adminCC,buyerSno(),assetNo);
 }
 
 // ============================================================
@@ -3422,155 +3426,37 @@ function applyColSettings(){
 }
 
 // ============================================================
-// 교사 테스트 계정
+// 교사(마스터) 본인 계정 — 학생번호 0번, 직업 대통령
+// 학급에 들어오면 자동으로 만들어지고 학생 명단·지급·구매 목록에 함께 나옵니다.
 // ============================================================
-var _testStudentCode = '';
+var TEACHER_SNO = '0';
+var _teacherAcc = null;
+var _testStudentCode = '';   // (예전 테스트 계정 기능 삭제 — 다른 코드 호환용으로 이름만 남김)
 var _testStudentNo   = '';
 
-function hideTestAccountResult(){
-  var r=$('test-account-result');
-  if(r) r.style.display='none';
-}
+function isTeacherSno(sno){ return String(sno) === TEACHER_SNO; }
 
-function setupTestAccount(){
-  var sno  = ($('test-sno')  ||{}).value||'';
-  var name = ($('test-name') ||{}).value||'';
-  var code = ($('test-code') ||{}).value||'';
-  sno  = sno.trim();
-  name = name.trim();
-  code = code.trim().toUpperCase();
+// 선생님이 직접 구매할 때 쓰는 학생번호 (학생이면 본인 번호)
+function buyerSno(){ return _sno || (_isTeacher ? TEACHER_SNO : ''); }
 
-  if(!sno) return alert('테스트 학생번호를 입력해 주세요.');
-  if(!_adminCC) return alert('학급을 먼저 선택해 주세요.');
-
-  showLoading();
-
-  // ① 기존 계정 조회
+function ensureTeacherAccountFor(classCode, teacherName){
+  if(!classCode) return;
   google.script.run
     .withSuccessHandler(function(r){
-      if(!r.success){ hideLoading(); showToast('⚠️ 조회 실패: '+r.msg); return; }
-
-      if(r.found){
-        // 이미 존재 → 코드만 업데이트 (코드 입력 시)
-        if(code && code !== r.code){
-          google.script.run
-            .withSuccessHandler(function(cr){
-              hideLoading();
-              if(cr.success){
-                r.code = cr.code;
-                _testStudentCode = cr.code;
-                _testStudentNo   = String(sno);
-                showTestAccountResult(r);
-                showToast('✅ 코드가 변경되었습니다: '+cr.code);
-              } else {
-                showTestAccountResult(r);
-                showToast('⚠️ 코드 변경 실패: '+cr.msg);
-              }
-            })
-            .updateStudentCode(_adminCC, sno, code);
-        } else {
-          hideLoading();
-          _testStudentCode = r.code;
-          _testStudentNo   = String(sno);
-          showTestAccountResult(r);
-          showToast('✅ 기존 테스트 계정을 불러왔습니다.');
-        }
-      } else {
-        // 없으면 새로 생성
-        google.script.run
-          .withSuccessHandler(function(ar){
-            if(!ar.success){ hideLoading(); alert('생성 실패: '+ar.msg); return; }
-            // 코드 직접 설정 요청이 있으면 한 번 더 업데이트
-            if(code){
-              google.script.run
-                .withSuccessHandler(function(cr){
-                  hideLoading();
-                  var finalCode = cr.success ? cr.code : ar.code;
-                  _testStudentCode = finalCode;
-                  _testStudentNo   = String(sno);
-                  showTestAccountResult({
-                    studentNo:String(sno), name:name||'테스트계정',
-                    job:'', card:0, bank:0, credit:0, code:finalCode
-                  });
-                  loadList();
-                  showToast('✅ 테스트 계정이 생성되었습니다! 코드: '+finalCode);
-                })
-                .updateStudentCode(_adminCC, sno, code);
-            } else {
-              hideLoading();
-              _testStudentCode = ar.code;
-              _testStudentNo   = String(sno);
-              showTestAccountResult({
-                studentNo:String(sno), name:name||'테스트계정',
-                job:'', card:0, bank:0, credit:0, code:ar.code
-              });
-              loadList();
-              showToast('✅ 테스트 계정 생성 완료! 코드: '+ar.code);
-            }
-          })
-          .addStudent(_adminCC, sno, name||'테스트계정', '');
-      }
-    })
-    .getTeacherTestStudent(_adminCC, sno);
-}
-
-function showTestAccountResult(s){
-  var r=$('test-account-result');
-  if(!r) return;
-  r.style.display='block';
-  if($('tr-sno-label'))   $('tr-sno-label').textContent   = s.studentNo||'';
-  if($('tr-name-label'))  $('tr-name-label').textContent  = s.name||'';
-  if($('tr-card'))        $('tr-card').textContent        = Number(s.card||0).toLocaleString()+' 머니';
-  if($('tr-bank'))        $('tr-bank').textContent        = Number(s.bank||0).toLocaleString()+' 머니';
-  if($('tr-credit'))      $('tr-credit').textContent      = (s.credit||0)+'점';
-  if($('tr-code-display'))$('tr-code-display').textContent= s.code||'------';
-}
-
-function copyTestCode(){
-  var code=($('tr-code-display')||{}).textContent||'';
-  if(!code||code==='------') return showToast('⚠️ 코드가 없습니다.');
-  navigator.clipboard.writeText(code)
-    .then(function(){ showToast('✅ 코드 복사 완료: '+code); })
-    .catch(function(){
-      // fallback
-      var ta=document.createElement('textarea');
-      ta.value=code; document.body.appendChild(ta);
-      ta.select(); document.execCommand('copy');
-      document.body.removeChild(ta);
-      showToast('✅ 코드 복사 완료: '+code);
-    });
-}
-
-function loginAsTestStudent(){
-  var code=($('tr-code-display')||{}).textContent||'';
-  var sno=_testStudentNo;
-  if(!code||code==='------'||!sno){
-    return alert('먼저 테스트 계정을 생성해 주세요.');
-  }
-  // 학생 로그인 처리
-  showLoading();
-  google.script.run
-    .withSuccessHandler(function(r){
-      hideLoading();
-      if(r.success){
-        _cc    = _adminCC;
-        _sno   = String(sno);
-        _myJob = r.job||'';
-        // 교사 권한은 유지 (마스터 버튼 보이게)
-        if($('my-job-label'))        $('my-job-label').innerText = (_myJob||'국민')+' (테스트)';
-        if($('teacher-to-master-btn')) $('teacher-to-master-btn').style.display='inline-block';
-        loadAppSettings(r.classCode);
-        go('view-student-dashboard');
-        renderStudentTiles();
+      if(!r || !r.success) return;
+      _teacherAcc = r;
+      if(_isTeacher && !_sno){
         initStudentWallet(r);
-        loadTx(_adminCC, sno, 's-tx-tbody', 's-tx-cnt');
-        showToast('✅ 테스트 계정으로 입장했습니다. 마스터 관리 버튼으로 복귀 가능합니다.');
-      } else {
-        alert('입장 실패: '+r.msg);
+        loadTx(classCode, TEACHER_SNO, 's-tx-tbody', 's-tx-cnt');
+        if($('my-job-label')) $('my-job-label').innerText = '선생님 (마스터) · ' + (r.job || '대통령');
+      }
+      if(r.created){
+        showToast('👑 선생님 계정(0번, 대통령)이 학생 명단에 추가되었습니다.');
+        loadList();
       }
     })
-    .withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
-    .loginStudent(_adminCC, sno, code);
+    .withFailureHandler(function(){})
+    .ensureTeacherAccount(classCode, teacherName || '');
 }
 
 // ============================================================
@@ -4341,6 +4227,7 @@ window.addEventListener('DOMContentLoaded',function(){
         if(typeof loadList==='function') loadList();
         if(typeof loadBankSettings==='function') loadBankSettings();
         if(typeof refreshMasterPendingBadges==='function') refreshMasterPendingBadges();
+        ensureTeacherAccountFor(data.classCode, data.adminName);
 
       } else if(data.role==='student'){
         _cc=data.classCode;

@@ -496,3 +496,22 @@ button.num-neg{background:#FFF1F2 !important;border-color:#FECDD3 !important}
   65%{transform:translateY(1px) scale(.98)}
   100%{transform:translateY(0) scale(1)}
 }
+
+/* ==========================================================================
+   선생님 계정 표시 (학생 명단 0번)
+   ========================================================================== */
+.teacher-bdg{
+  display:inline-block;margin-left:5px;padding:2px 8px;border-radius:999px;
+  background:#FFF4D6;color:#9A6400;border:1px solid #F3D27A;font-size:12.5px;white-space:nowrap;
+}
+
+/* ==========================================================================
+   모든 글씨 기본 볼드체 (고급스러운 느낌)
+   ========================================================================== */
+body{font-weight:700}
+input,select,textarea,button,option{font-weight:inherit}
+/* 코드나 CSS에 얇게(400·500·300) 적어 둔 글씨도 굵게 */
+body [style*="font-weight:300"],body [style*="font-weight: 300"],
+body [style*="font-weight:400"],body [style*="font-weight: 400"],
+body [style*="font-weight:500"],body [style*="font-weight: 500"],
+body [style*="font-weight:normal"],body [style*="font-weight: normal"]{font-weight:700 !important}
