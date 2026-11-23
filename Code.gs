@@ -1417,28 +1417,36 @@ function executeSmartPayroll(classCode, payrollJson) {
     var tSheet = getOrCreateTransSheet(ss);
     var stuData = stuSheet.getDataRange().getValues();
     var cc = cleanText(classCode);
-    var payroll = JSON.parse(payrollJson);
-    var today = getTodayStr(), count = 0, rows = [];
+    var payroll = typeof payrollJson === 'string' ? JSON.parse(payrollJson) : (payrollJson || []);
+    var today = getTodayStr(), count = 0, rows = [], total = 0, missing = [];
     for (var p = 0; p < payroll.length; p++) {
       var item = payroll[p];
-      if (!item.studentNo) continue;
+      if (!item || item.studentNo === null || item.studentNo === undefined || String(item.studentNo) === '') continue;
       var sno = cleanText(String(item.studentNo));
-      var net = Number(item.netPay)||0;
+      var net = Math.round(Number(item.netPay)||0);
+      if (net === 0) continue;
       var stuRowIdx = -1, cardBalance = 0;
       for (var i = 1; i < stuData.length; i++) {
         if (cleanText(stuData[i][0])===cc && cleanText(String(stuData[i][1]))===sno) {
           stuRowIdx=i+1; cardBalance=Number(stuData[i][4])||0; break;
         }
       }
-      if (stuRowIdx===-1) continue;
+      if (stuRowIdx===-1) { missing.push(sno); continue; }
       var newCard = cardBalance + net;
       stuSheet.getRange(stuRowIdx,5).setValue(newCard);
+      stuData[stuRowIdx-1][4] = newCard;   // 같은 학생이 두 번 있어도 누적되게
       rows.push([today, cc, sno, '[스마트월급] 실수령액 '+net+'머니', net>0?net:'', net<0?Math.abs(net):'', newCard, '스마트월급']);
-      count++;
+      count++; total += net;
     }
-    if (rows.length>0) tSheet.getRange(tSheet.getLastRow()+1,1,rows.length,8).setValues(rows);
+    if (count === 0) {
+      return { success: false, msg: missing.length
+        ? '학생을 찾지 못했습니다 (번호: ' + missing.join(', ') + '). 국민 관리에서 새로고침 후 다시 시도해 주세요.'
+        : '지급할 금액이 없습니다.' };
+    }
+    for (var w = 0; w < rows.length; w++) tSheet.appendRow(rows[w]);
     try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
-    return { success: true, msg: count+'명 스마트 월급 지급 완료!' };
+    SpreadsheetApp.flush();
+    return { success: true, msg: count+'명에게 총 '+total+'머니 스마트 월급 지급 완료!' + (missing.length ? ' (찾지 못한 번호: '+missing.join(', ')+')' : ''), count: count, total: total };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 

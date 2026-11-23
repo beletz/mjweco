@@ -2987,6 +2987,21 @@ var _payrollColumns = [];
 var _tempColumns  = [];
 var _DEFAULT_JOBS = ['국민','은행청장','국세청장','신용등급관리위원장','재산조사국장','부동산 중개인','통계청장','도매상인','경찰서장','증권회사'];
 
+// ── 급여 지급 화면 움직임 (Anime.js) ──
+function _reduceMotion(){ return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+function salMotion(targets, dy){
+  var list = Array.prototype.slice.call(targets||[]).filter(function(t){ return t && t.nodeType===1; }).slice(0,40);
+  if(!window.anime || _reduceMotion() || !list.length) return;
+  anime.remove(list);
+  anime({
+    targets: list, opacity:[0,1], translateY:[dy||10,0],
+    duration:480, delay:anime.stagger(35), easing:'cubicBezier(.2,.7,.2,1)',
+    complete:function(){ list.forEach(function(t){ t.style.opacity=''; t.style.transform=''; }); }
+  });
+  // 안전장치: 애니메이션이 멈춰도 내용은 반드시 보이게
+  setTimeout(function(){ list.forEach(function(t){ if(Number(getComputedStyle(t).opacity)<1){ anime.remove(t); t.style.opacity=''; t.style.transform=''; } }); }, 1800);
+}
+
 function salaryTab(mode, el) {
   ['table','quick','smart'].forEach(function(m){
     var t=$('slt-'+m);
@@ -2996,6 +3011,8 @@ function salaryTab(mode, el) {
   });
   el.style.background='white'; el.style.color='#7C3AED'; el.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)';
   $('sal-panel-'+mode).style.display='block';
+  salMotion($('sal-panel-'+mode).children, 12);
+  if(window.anime && !_reduceMotion()) anime({ targets: el, scale:[0.94,1], duration:340, easing:'easeOutBack' });
   if(mode==='table') loadSalaryTable();
   if(mode==='quick') refreshPaySels();
   if(mode==='smart') initSmartPayroll();
@@ -3031,6 +3048,7 @@ function renderSalaryTableUI() {
     h+='</div></div>';
   });
   c.innerHTML=h;
+  salMotion(c.children, 10);
 }
 
 function addSalaryJob(){
@@ -3077,10 +3095,17 @@ function getEffectiveCols(){
   return _payrollColumns.length>0 ? _payrollColumns : [{id:'tax',name:'소득세',type:'deduct',valueType:'rate',rate:10}];
 }
 
+var _payrollList = [];   // 스마트 월급 표에 그려진 학생 순서
+
 function initSmartPayroll(){
   var c=$('smart-payroll-table');
   if(!_stuList.length){
-    if(c) c.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;font-family:Pretendard,sans-serif;">국민 관리 탭에서 학생 목록을 먼저 불러주세요.</div>';
+    // 명단이 아직 없으면 직접 불러온 뒤 다시 그림
+    if(c) c.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;">학생 명단을 불러오는 중...</div>';
+    google.script.run.withSuccessHandler(function(r){
+      if(r && r.success && r.list.length){ _stuList=r.list; initSmartPayroll(); }
+      else if(c) c.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;">등록된 학생이 없습니다. 국민 관리에서 학생을 먼저 추가해 주세요.</div>';
+    }).getStudentList(_adminCC);
     return;
   }
   if(Object.keys(_salaryTable).length===0){
@@ -3095,6 +3120,7 @@ function initSmartPayroll(){
 
 function renderSmartPayrollTable(){
   var c=$('smart-payroll-table'); if(!c||!_stuList.length) return;
+  _payrollList=_stuList.slice();   // ★ 표를 그린 순간의 명단을 따로 기억 (나중에 명단이 새로고침돼도 칸이 어긋나지 않게)
   var cols=getEffectiveCols();
 
   var h='<table style="width:100%;border-collapse:collapse;min-width:700px;font-family:Pretendard,sans-serif;">';
@@ -3146,7 +3172,7 @@ function renderSmartPayrollTable(){
 
   // ── Body: 학생 행 ──
   h+='<tbody>';
-  _stuList.forEach(function(s,idx){
+  _payrollList.forEach(function(s,idx){
     var base=_salaryTable[s.job||'국민']||_salaryTable['국민']||0;
     var netCalc=base;
     h+='<tr style="border-bottom:1px solid #F1F5F9;" onmouseover="this.style.background=\'#FAFBFF\'" onmouseout="this.style.background=\'white\'">';
@@ -3207,12 +3233,13 @@ function renderSmartPayrollTable(){
   h+='</table>';
   c.innerHTML=h;
   updatePayrollTotals();
+  salMotion(c.querySelectorAll('tbody tr, tfoot tr'), 8);
 }
 
 // 기본금 일괄 입력
 function bulkFillBase(){
   var val=parseInt(($('bulk-base')||{}).value)||0;
-  _stuList.forEach(function(s,idx){
+  _payrollList.forEach(function(s,idx){
     var el=$('sp-base-'+idx);
     if(el){ el.value=val; updateNetPay(idx); }
   });
@@ -3225,7 +3252,7 @@ function applyHobongTable(){
     showToast('⚠️ 급여표를 먼저 저장해 주세요.');
     return;
   }
-  _stuList.forEach(function(s,idx){
+  _payrollList.forEach(function(s,idx){
     var salary=_salaryTable[s.job||'국민']||_salaryTable['국민']||0;
     var el=$('sp-base-'+idx);
     if(el){ el.value=salary; updateNetPay(idx); }
@@ -3236,7 +3263,7 @@ function applyHobongTable(){
 // 특정 지출/수입 컬럼 일괄 입력
 function bulkFillCol(cidx){
   var val=parseInt(($('bulk-col-'+cidx)||{}).value)||0;
-  _stuList.forEach(function(s,idx){
+  _payrollList.forEach(function(s,idx){
     var el=$('sp-col-'+idx+'-'+cidx);
     if(el){ el.value=val; updateNetPay(idx); }
   });
@@ -3263,7 +3290,7 @@ function updatePayrollTotals(){
   var cols=getEffectiveCols();
   var totalBase=0, totalNet=0;
   var colTotals=cols.map(function(){ return 0; });
-  _stuList.forEach(function(s,idx){
+  _payrollList.forEach(function(s,idx){
     var base=parseInt(($('sp-base-'+idx)||{}).value)||0;
     totalBase+=base;
     var net=base;
@@ -3325,28 +3352,52 @@ function resetSmartPayroll(){
 }
 
 function executeSmartPayrollUI(){
-  if(!_stuList.length) return alert('학생 목록이 없습니다.');
+  if(!_payrollList.length) return alert('학생 목록이 없습니다. 급여 지급 탭을 다시 열어 주세요.');
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur(); // 입력 중인 칸 값 확정
   var cols=getEffectiveCols();
-  var payroll=[];
-  _stuList.forEach(function(s,idx){
+  var payroll=[], lines=[], total=0;
+  _payrollList.forEach(function(s,idx){
     var baseEl=$('sp-base-'+idx); if(!baseEl) return;
     var net=parseInt(baseEl.value)||0;
     cols.forEach(function(col,cidx){
       var v=parseInt(($('sp-col-'+idx+'-'+cidx)||{}).value)||0;
       if(col.type==='deduct') net-=v; else net+=v;
     });
-    payroll.push({studentNo:s.studentNo, netPay:net});
+    if(net===0) return;   // 0 머니는 지급하지 않음 (내역에 빈 기록이 쌓이지 않게)
+    payroll.push({studentNo:String(s.studentNo), netPay:net});
+    lines.push(s.studentNo+'번 '+(s.name||'')+' : '+(net>0?'+':'')+net.toLocaleString()+' 머니');
+    total+=net;
   });
-  if(!confirm(_stuList.length+'명에게 스마트 월급을 지급하시겠습니까?\n실수령액 기준으로 카드에 입금됩니다.')) return;
+  if(!payroll.length) return alert('지급할 금액이 없습니다.\n기본급이나 항목 금액을 입력해 주세요.');
+  var preview=lines.slice(0,12).join('\n')+(lines.length>12?'\n… 외 '+(lines.length-12)+'명':'');
+  if(!confirm('[스마트 월급 지급]\n\n'+preview+'\n\n총 '+payroll.length+'명 · 합계 '+total.toLocaleString()+' 머니\n카드로 입금할까요?')) return;
+  var btn=$('sp-run-btn'); if(btn) btn.disabled=true;
   showLoading();
   google.script.run
     .withSuccessHandler(function(r){
-      hideLoading();
-      showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);
-      if(r.success) loadList();
+      hideLoading(); if(btn) btn.disabled=false;
+      if(!r || !r.success){ alert('⚠️ 지급하지 못했습니다.\n\n'+((r&&r.msg)||'알 수 없는 오류')); return; }
+      showToast('✅ '+r.msg);
+      payrollDoneFlash();
+      loadList();
+      if(_teacherAcc && payroll.some(function(p){ return isTeacherSno(p.studentNo); }))
+        ensureTeacherAccountFor(_adminCC);   // 선생님(0번) 잔액 화면도 새로고침
     })
-    .withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
+    .withFailureHandler(function(err){ hideLoading(); if(btn) btn.disabled=false; alert('⚠️ 지급 중 오류가 났습니다.\n\n'+err.message); })
     .executeSmartPayroll(_adminCC, JSON.stringify(payroll));
+}
+
+// 지급 완료 후 실수령액 칸이 반짝 + 통통
+function payrollDoneFlash(){
+  var nets=document.querySelectorAll('[id^="sp-net-"]');
+  if(window.anime){
+    anime({ targets: nets, scale:[1,1.25,1], duration:700, delay:anime.stagger(40), easing:'easeOutBack' });
+  }
+  nets.forEach(function(el){
+    var td=el.closest('td'); if(!td) return;
+    td.style.transition='background-color .6s'; td.style.backgroundColor='#BBF7D0';
+    setTimeout(function(){ td.style.backgroundColor=''; },900);
+  });
 }
 
 // ── 항목 설정 모달 ──
