@@ -450,6 +450,12 @@
   <!-- BANK ADMIN PANEL -->
   <div class="md-panel" id="md-bank-admin">
     <div class="sc">
+      <div class="st"><i class="fa-solid fa-scale-balanced" style="color:var(--green);"></i> 은행 잔액 점검
+        <button class="btn btn-sm btn-green" style="margin-left:auto;" onclick="checkBankBalances()"><i class="fa-solid fa-magnifying-glass-dollar"></i> 점검하기</button>
+      </div>
+      <div class="info-box">💡 예금을 지웠는데 은행 잔액이 그대로 남아 있다면 눌러 주세요. 진행 중인 예금이 없는데 은행에 남은 돈을 찾아 카드로 돌려줍니다. 바꾸기 전에 목록을 먼저 보여 드려요.</div>
+    </div>
+    <div class="sc">
       <div class="st"><i class="fa-solid fa-sliders" style="color:var(--blue);"></i> 예금 이자율 설정</div>
       <div class="info-box">💡 각 기간별 이자율을 설정하세요. 학생이 예금을 가입할 때 적용됩니다. (예: 5 입력 = 5%)</div>
       <div class="rate-grid" id="rate-grid">

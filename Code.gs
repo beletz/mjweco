@@ -630,9 +630,75 @@ function deleteDepositByBanker(classCode, rowNo) {
     if(cleanText(depData[rn][0]) !== cc)
       return { success: false, msg: "접근 권한이 없습니다." };
 
+    // ★ 아직 살아 있는(활성) 예금이면, 은행에 묶인 원금을 카드로 돌려준 뒤 지움
+    //   (예전에는 기록만 지워서 은행 잔액이 그대로 남는 오류가 있었음)
+    var refundMsg = '';
+    if (cleanText(depData[rn][7]) === '활성') {
+      var sno       = cleanText(String(depData[rn][1]));
+      var principal = Number(depData[rn][3]) || 0;
+      var stuSheet  = getOrCreateStudentsSheet(ss);
+      var stuData   = stuSheet.getDataRange().getValues();
+      for (var i = 1; i < stuData.length; i++) {
+        if (cleanText(stuData[i][0]) === cc && cleanText(String(stuData[i][1])) === sno) {
+          var newBank = (Number(stuData[i][5]) || 0) - principal;
+          var newCard = (Number(stuData[i][4]) || 0) + principal;
+          stuSheet.getRange(i + 1, 5).setValue(newCard);
+          stuSheet.getRange(i + 1, 6).setValue(newBank);
+          getOrCreateTransSheet(ss).appendRow([getTodayStr(), cc, sno,
+            String(depData[rn][2]) + ' 예금 삭제 (원금 ' + principal + '머니 카드로 반환)', principal, '', newCard, '예금삭제']);
+          refundMsg = ' 원금 ' + principal + ' 머니를 카드로 돌려줬어요.';
+          break;
+        }
+      }
+      try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
+    }
+
     depSheet.deleteRow(rn + 1); // 시트 행 = 배열 인덱스 + 1
     SpreadsheetApp.flush();
-    return { success: true, msg: "삭제 완료" };
+    return { success: true, msg: "삭제 완료!" + refundMsg };
+  } catch(e) { return { success: false, msg: e.message }; }
+}
+
+// ── 은행 잔액 점검·정리 (선생님) ──
+// 은행 잔액은 '활성' 예금 원금의 합과 같아야 함. 예금 없이 은행에 남은 돈은 카드로 돌려줌.
+// apply=false 이면 점검만 하고 바꾸지 않음.
+function repairBankBalances(classCode, apply) {
+  try {
+    var ss       = SpreadsheetApp.getActiveSpreadsheet();
+    var cc       = cleanText(classCode);
+    var stuSheet = getOrCreateStudentsSheet(ss);
+    var stuData  = stuSheet.getDataRange().getValues();
+    var depData  = getOrCreateDepositsSheet(ss).getDataRange().getValues();
+    var active = {};
+    for (var j = 1; j < depData.length; j++) {
+      if (cleanText(depData[j][0]) !== cc || cleanText(depData[j][7]) !== '활성') continue;
+      var k = cleanText(String(depData[j][1]));
+      active[k] = (active[k] || 0) + (Number(depData[j][3]) || 0);
+    }
+    var fixes = [], short = [], tSheet = null;
+    for (var i = 1; i < stuData.length; i++) {
+      if (cleanText(stuData[i][0]) !== cc) continue;
+      var sno = cleanText(String(stuData[i][1]));
+      var bank = Number(stuData[i][5]) || 0, card = Number(stuData[i][4]) || 0;
+      var should = active[sno] || 0;
+      if (bank > should) {
+        var extra = bank - should;
+        fixes.push({ studentNo: sno, name: stuData[i][2] || '', bank: bank, should: should, extra: extra });
+        if (apply) {
+          stuSheet.getRange(i + 1, 5).setValue(card + extra);
+          stuSheet.getRange(i + 1, 6).setValue(should);
+          tSheet = tSheet || getOrCreateTransSheet(ss);
+          tSheet.appendRow([getTodayStr(), cc, sno, '은행 잔액 정리 (예금 없이 남은 ' + extra + '머니 카드로 반환)', extra, '', card + extra, '은행정리']);
+        }
+      } else if (bank < should) {
+        short.push({ studentNo: sno, name: stuData[i][2] || '', bank: bank, should: should });
+      }
+    }
+    if (apply && fixes.length) {
+      try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
+      SpreadsheetApp.flush();
+    }
+    return { success: true, fixes: fixes, short: short, applied: !!apply };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 

@@ -313,6 +313,13 @@ function renderList(list){
   tb.innerHTML=h;
 }
 
+// 학생 선택 목록 글자: "3번 홍길동 [은행청장] · 💳 1,200 · 🏦 300"
+function stuOptLabel(s, withJob){
+  var n=function(v){return (Number(v)||0).toLocaleString();};
+  return s.studentNo+'번 '+(s.name||'(이름없음)')+(withJob&&s.job?' ['+s.job+']':'')+
+    '  ·  💳 '+n(s.card)+'  ·  🏦 '+n(s.bank);
+}
+
 function jobOptions(selected){
   var jobs=['','대통령','은행청장','국세청장','신용등급관리위원장','재산조사국장','부동산 중개인','통계청장','도매상인','경찰서장','증권회사'];
   var labels={'':'국민','대통령':'대통령','은행청장':'은행청장','국세청장':'국세청장','신용등급관리위원장':'신용등급관리위원장','재산조사국장':'재산조사국장','부동산 중개인':'부동산 중개인','통계청장':'통계청장','도매상인':'도매상인','경찰서장':'경찰서장','증권회사':'증권회사'};
@@ -321,11 +328,11 @@ function jobOptions(selected){
 
 function refreshAllSelects(){
   var sel1=$('ind-pay-stu');
-  if(sel1){sel1.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=s.studentNo+'번 '+(s.name||'(이름없음)');sel1.appendChild(o);});}
+  if(sel1){sel1.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=stuOptLabel(s);sel1.appendChild(o);});}
   var sel2=$('tax-stu');
-  if(sel2){sel2.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=s.studentNo+'번 '+(s.name||'');sel2.appendChild(o);});}
+  if(sel2){sel2.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=stuOptLabel(s);sel2.appendChild(o);});}
   var sel3=$('teacher-stu-sel');
-  if(sel3){sel3.innerHTML='<option value="">-- 학생을 선택하세요 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=s.studentNo+'번 '+(s.name||'(이름없음)')+' '+(s.job?'['+s.job+']':'');sel3.appendChild(o);});}
+  if(sel3){sel3.innerHTML='<option value="">-- 학생을 선택하세요 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=stuOptLabel(s,true);sel3.appendChild(o);});}
 }
 
 function doBulk(){
@@ -377,7 +384,7 @@ function doDel(sno){
 // ============================================================
 function refreshPaySels(){
   var sel=$('ind-pay-stu');
-  if(sel){sel.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=s.studentNo+'번 '+(s.name||'');sel.appendChild(o);});}
+  if(sel){sel.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=stuOptLabel(s);sel.appendChild(o);});}
 }
 
 function doBulkPay(){
@@ -475,6 +482,7 @@ function saveRates(){
 function loadAllDeposits(){
   var targetCC = _cc || _adminCC;
   if(!targetCC){ showToast('⚠️ 학급 코드를 찾을 수 없습니다. 다시 로그인해 주세요.'); return; }
+  fillDepositCustomers();
 
   var container = $('deposit-records-container');
   var tbody     = $('deposit-tbody');
@@ -698,7 +706,7 @@ function renderDepositTable(list){
 // ============================================================
 function refreshTaxSels(){
   var sel=$('tax-stu');
-  if(sel){sel.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=s.studentNo+'번 '+(s.name||'');sel.appendChild(o);});}
+  if(sel){sel.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=stuOptLabel(s);sel.appendChild(o);});}
 }
 
 function doBulkTax(){
@@ -817,7 +825,7 @@ function refreshTeacherSel(){
   sel.innerHTML='<option value="">-- 학생을 선택하세요 --</option>';
   _stuList.forEach(function(s){
     var opt=document.createElement('option');opt.value=s.studentNo;
-    opt.textContent=s.studentNo+'번 '+(s.name||'(이름없음)')+' '+(s.job?'['+s.job+']':'');
+    opt.textContent=stuOptLabel(s,true);
     sel.appendChild(opt);
   });
   $('teacher-wallet-wrap').style.display='none';
@@ -1031,7 +1039,7 @@ function fillWalletStudentSelect(){
     var keep = sel.value || (_sno ? String(_sno) : '');
     var h = '<option value="">-- 학생을 선택하세요 --</option>';
     list.forEach(function(s){
-      h += '<option value="'+esc(s.studentNo)+'">'+esc(s.studentNo)+'번 '+esc(s.name||'')+'</option>';
+      h += '<option value="'+esc(s.studentNo)+'">'+esc(stuOptLabel(s))+'</option>';
     });
     sel.innerHTML = h;
     if(keep && list.some(function(s){ return String(s.studentNo)===keep; })){ sel.value = keep; walletTeacherPick(); }
@@ -1176,23 +1184,28 @@ var depositInterestRates={1:5.0,2:8.0,3:11.0,4:15.0};
 var primeInterestRate=2.0;
 var currentBankRecords=[];
 
+// 고객 선택 목록 (이름 옆에 카드/은행 잔액 표시). 예금을 만들거나 지운 뒤에도 다시 불러와 잔액을 새로 보여 줌
+function fillDepositCustomers(first){
+  var sel=$('deposit-customer');
+  if(!sel)return;
+  var keep=sel.value;
+  if(first)sel.innerHTML='<option value="">데이터 불러오는 중...</option>';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success)return;
+    sel.innerHTML='<option value="">-- 학생을 선택하세요 --</option>';
+    r.list.forEach(function(s){
+      var o=document.createElement('option');o.value=s.studentNo;
+      o.textContent=stuOptLabel(s);sel.appendChild(o);
+    });
+    if(keep&&r.list.some(function(s){return String(s.studentNo)===String(keep);}))sel.value=keep;
+  }).getStudentList(_cc||_adminCC);
+}
+
 function initBankDashboard(){
   var today=new Date().toISOString().split('T')[0];
   if($('deposit-start-date'))$('deposit-start-date').value=today;
   var currentCode=_cc||_adminCC;
-  var sel=$('deposit-customer');
-  if(sel){
-    sel.innerHTML='<option value="">데이터 불러오는 중...</option>';
-    google.script.run.withSuccessHandler(function(r){
-      if(r.success){
-        sel.innerHTML='<option value="">-- 학생을 선택하세요 --</option>';
-        r.list.forEach(function(s){
-          var o=document.createElement('option');o.value=s.studentNo;
-          o.textContent=s.studentNo+'번 '+(s.name||'');sel.appendChild(o);
-        });
-      }
-    }).getStudentList(currentCode);
-  }
+  fillDepositCustomers(true);
   google.script.run.withSuccessHandler(function(r){
     if(r.success){
       depositInterestRates={1:r.r1,2:r.r2,3:r.r3,4:r.r4};
@@ -1363,17 +1376,53 @@ function cancelDeposit(depositRowNo, studentNo, principal){
 }
 
 function deleteDeposit(rowNo, studentNo){
-  if(!confirm('이 예금 기록을 삭제하시겠습니까?\n삭제된 기록은 복구할 수 없습니다.')) return;
+  if(!confirm('이 예금 기록을 삭제하시겠습니까?\n\n아직 진행 중인 예금이면 원금이 학생 카드로 돌아갑니다(이자는 없음).\n삭제된 기록은 복구할 수 없습니다.')) return;
   var targetCC = _cc || _adminCC;
   showLoading();
   google.script.run
     .withSuccessHandler(function(r){
       hideLoading();
-      showToast(r.success ? '🗑️ 삭제 완료' : '⚠️ ' + r.msg);
-      if(r.success) loadAllDeposits();
+      if(!r.success){ alert('⚠️ ' + r.msg); return; }
+      showToast('🗑️ ' + r.msg, 3500);
+      loadAllDeposits();
+      if(typeof loadList==='function' && _adminCC) loadList();
     })
     .withFailureHandler(function(err){ hideLoading(); alert('오류: ' + err.message); })
     .deleteDepositByBanker(targetCC, rowNo);
+}
+
+// ── 선생님: 은행 잔액 점검·정리 ──
+function checkBankBalances(){
+  var cc = _adminCC || _cc;
+  if(!cc) return alert('학급을 먼저 선택해 주세요.');
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r){
+      hideLoading();
+      if(!r.success) return alert('⚠️ ' + r.msg);
+      var shortTxt = r.short.length
+        ? '\n\n참고: 아래 학생은 은행 잔액이 예금보다 적어요(자동으로 고치지 않음).\n' +
+          r.short.map(function(s){ return s.studentNo+'번 '+(s.name||'')+' : 은행 '+s.bank+' / 예금 합계 '+s.should; }).join('\n')
+        : '';
+      if(!r.fixes.length){ alert('✅ 은행 잔액에 문제가 없어요.' + shortTxt); return; }
+      var list = r.fixes.map(function(f){
+        return f.studentNo+'번 '+(f.name||'')+' : 은행 '+f.bank.toLocaleString()+' → '+f.should.toLocaleString()+' (카드로 +'+f.extra.toLocaleString()+')';
+      }).join('\n');
+      if(!confirm('[은행 잔액 점검]\n\n예금 없이 은행에 남아 있는 돈이 있어요.\n카드로 돌려줄까요?\n\n'+list+shortTxt)) return;
+      showLoading();
+      google.script.run
+        .withSuccessHandler(function(r2){
+          hideLoading();
+          if(!r2.success) return alert('⚠️ ' + r2.msg);
+          alert('✅ ' + r2.fixes.length + '명의 은행 잔액을 정리했어요.\n\n' + list);
+          if(typeof loadList==='function') loadList();
+          if(typeof loadAllDeposits==='function') loadAllDeposits();
+        })
+        .withFailureHandler(function(err){ hideLoading(); alert('오류: ' + err.message); })
+        .repairBankBalances(cc, true);
+    })
+    .withFailureHandler(function(err){ hideLoading(); alert('오류: ' + err.message); })
+    .repairBankBalances(cc, false);
 }
 
 function exportDepositsCSV(){
@@ -1463,7 +1512,7 @@ function loadFineStudents(){
   sel.innerHTML='<option value="">-- 학생 선택 --</option>';
   google.script.run.withSuccessHandler(function(r){
     if(!r.success)return;
-    r.list.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=s.studentNo+'번 '+(s.name||'');sel.appendChild(o);});
+    r.list.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=stuOptLabel(s);sel.appendChild(o);});
   }).getStudentList(_cc);
 }
 
@@ -2096,7 +2145,7 @@ function loadTaxStatsStu(){
     r.list.forEach(function(s){
       var o=document.createElement('option');
       o.value=s.studentNo;
-      o.textContent=s.studentNo+'번 '+(s.name||'');
+      o.textContent=stuOptLabel(s);
       sel.appendChild(o);
     });
     loadTaxStats();
