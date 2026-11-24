@@ -694,3 +694,96 @@ h1,h2,h3,.brand,.st,.dash-tile h3{ letter-spacing:-.01em; }
   .sa-head{display:none}
   .sa-price{grid-column:1/-1;text-align:left}
 }
+
+/* ==========================================================================
+   국민(용돈기입장) 탭 — wallet-tabs.js
+   ========================================================================== */
+#w-tabs{flex-wrap:wrap;row-gap:2px}
+#w-tabs .dt .mh-badge{margin-left:3px}
+.cit-body.wt-wide{grid-template-columns:1fr}
+.cit-body.wt-wide > .lp{display:none}
+.wt-sub{display:flex;align-items:center;gap:10px;font-size:18px;color:var(--dark);margin:4px 0 12px}
+.wt-empty{text-align:center;padding:40px 10px;color:#8A919B;font-size:15px;line-height:1.7}
+.wt-empty div{font-size:42px;margin-bottom:6px}
+.wt-list{display:flex;flex-direction:column;gap:8px}
+.wt-row{display:flex;align-items:center;gap:12px;background:#fff;border:1.5px solid var(--line);border-left:6px solid var(--line-strong);border-radius:14px;padding:12px 14px}
+.wt-row-main{flex:1;min-width:0}
+.wt-row-title{font-size:16.5px;color:var(--dark)}
+.wt-row-sub{font-size:13.5px;color:var(--gray);margin-top:3px;line-height:1.5}
+.wt-st{white-space:nowrap;font-size:14px;padding:5px 12px;border-radius:999px;background:#EEF1F5;color:#5B6573}
+.wt-st.ok{background:var(--t-green);color:#0E7A4D}
+.wt-st.late{background:var(--t-orange);color:#A35600}
+.wt-st.miss{background:var(--t-red);color:#C2253A}
+.wt-st.wait{background:var(--t-yellow);color:#8A5A00}
+.wt-tag{display:inline-block;font-size:12.5px;padding:2px 8px;border-radius:999px;margin-left:4px;vertical-align:middle}
+.wt-tag.green{background:var(--t-green);color:#0E7A4D}
+.wt-tag.blue{background:var(--t-blue);color:#1F4FCC}
+.wt-tag.red{background:var(--t-red);color:#C2253A}
+.wt-tag.orange{background:var(--t-orange);color:#A35600}
+.wt-row.wt-hw-ok{border-left-color:#14A46C}
+.wt-row.wt-hw-late{border-left-color:#F28C28}
+.wt-row.wt-hw-miss{border-left-color:#EF4A5A}
+
+/* 과제 요약 */
+.wt-hw-sum{display:grid;grid-template-columns:minmax(220px,1.6fr) repeat(4,1fr);gap:10px;margin-bottom:16px}
+@media (max-width:900px){.wt-hw-sum{grid-template-columns:1fr 1fr}.wt-hw-rate{grid-column:1/-1}}
+.wt-hw-rate{display:flex;align-items:center;gap:14px;background:var(--t-blue);border:1px solid #CFDDFF;border-radius:16px;padding:14px}
+.wt-hw-rate b{display:block;font-size:17px;color:#1F3F99}
+.wt-hw-rate small{display:block;font-size:13.5px;color:#3B4F80;margin-top:2px}
+.wt-ring{--p:0;width:66px;height:66px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:conic-gradient(#2F6BFF calc(var(--p)*1%), #DCE6FF 0)}
+.wt-ring span{width:50px;height:50px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;color:#1F3F99}
+.wt-hw-chip{border-radius:16px;padding:12px;text-align:center;border:1px solid var(--line);background:#fff}
+.wt-hw-chip span{display:block;font-size:14px;color:var(--ink-2)}
+.wt-hw-chip b{display:block;font-size:28px;line-height:1.2;margin:2px 0}
+.wt-hw-chip small{display:block;font-size:12.5px;color:var(--gray)}
+.wt-hw-chip.ok{background:var(--t-green);border-color:#BDE9D5}.wt-hw-chip.ok b{color:#0E7A4D}
+.wt-hw-chip.late{background:var(--t-orange);border-color:#F8D3A6}.wt-hw-chip.late b{color:#C26A00}
+.wt-hw-chip.miss{background:var(--t-red);border-color:#F7C2C9}.wt-hw-chip.miss b{color:#C2253A}
+.wt-hw-chip.none b{color:#5B6573}
+
+/* 간식 */
+.wt-snack-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.wt-snack{background:linear-gradient(180deg,var(--t-yellow),#fff 70%);border:1.5px solid #F3DE8A;border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.wt-snack-name{font-size:19px;color:var(--dark)}
+.wt-snack-price{font-size:17px;color:#B45309}
+.wt-snack-desc{font-size:13.5px;color:var(--gray);line-height:1.45}
+.wt-snack-act{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:8px}
+.wt-snack-act input{width:62px;padding:8px;border:1px solid var(--line-strong);border-radius:10px;font-size:15px;font-family:inherit;text-align:center}
+.wt-snack-act span{font-size:14px;color:var(--gray)}
+.wt-snack-act button{margin-left:auto;border:none;background:var(--orange);color:#fff;border-radius:999px;padding:8px 16px;font-size:15px;font-family:inherit;cursor:pointer;transition:background .15s,transform .15s var(--ease)}
+.wt-snack-act button:hover{background:#E07A12;transform:scale(1.04)}
+.wt-snack-act button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.wt-btns{display:flex;gap:6px}
+.wt-ok,.wt-no{border:none;border-radius:999px;padding:7px 14px;font-size:14px;font-family:inherit;cursor:pointer}
+.wt-ok{background:#12A86B;color:#fff}.wt-ok:hover{background:#0E8F5A}
+.wt-no{background:#FFF1F2;color:#E5384B;border:1px solid #FECDD3}.wt-no:hover{background:#FFE4E6}
+.wt-more{margin-top:12px}
+.wt-more summary{cursor:pointer;font-size:15px;color:var(--gray);margin-bottom:8px}
+
+/* 매점 시세표 */
+.wt-alert{border-radius:14px;padding:12px 14px;font-size:15px;line-height:1.6;margin-bottom:14px}
+.wt-alert.red{background:var(--t-red);color:#9F1D2E;border:1px solid #F7C2C9}
+.wt-alert.green{background:var(--t-green);color:#0B6B43;border:1px solid #BDE9D5}
+.wt-store tr.wt-out td{opacity:.55}
+
+/* 나의 주식 */
+.wt-live{font-size:12.5px;color:#E11D48;margin-left:6px;animation:wtBlink 2s ease-in-out infinite}
+@keyframes wtBlink{50%{opacity:.35}}
+.stk-card.wt-flash{animation:wtFlash 1.2s ease}
+@keyframes wtFlash{0%{box-shadow:0 0 0 4px rgba(242,140,40,.55)}100%{box-shadow:0 0 0 0 rgba(242,140,40,0)}}
+#wt-stk-cards .stk-card{cursor:default}
+.wt-hold-sum{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.wt-hold-sum > div{background:var(--t-yellow);border:1px solid #F3DE8A;border-radius:14px;padding:10px 12px}
+.wt-hold-sum small{display:block;font-size:13px;color:#8A5A00}
+.wt-hold-sum b{display:block;font-size:20px;color:var(--dark)}
+.wt-hold-sum b.wt-up{color:#E11D48}.wt-hold-sum b.wt-down{color:#2563EB}
+.wt-info-title{font-size:16px;color:var(--dark);margin-bottom:8px}
+.wt-info-stock{background:#F8FAFC;border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.wt-info-head{font-size:16px}
+.wt-info-meta{font-size:13.5px;color:var(--gray);margin-top:3px;line-height:1.5}
+.wt-tip{margin-top:12px;font-size:13.5px;color:#2A3B66;background:var(--t-blue);border-radius:12px;padding:10px 12px;line-height:1.55}
+/* 주식은 오르면 빨강·내리면 파랑 (ui-colors.js의 +초록/−빨강보다 우선) */
+#wt-stk-hold .up,#wt-stk-hold .wt-up{color:#E11D48 !important}
+#wt-stk-hold .down,#wt-stk-hold .wt-down{color:#2563EB !important}
+.wt-empty > div.bob{display:block;width:max-content;margin:0 auto 6px}

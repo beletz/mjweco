@@ -4046,3 +4046,206 @@ function setAvatarPrices(classCode, changesJson) {
     return { success: true, msg: n + '개 아이템 설정을 저장했어요.' };
   } catch (e) { return { success: false, msg: e.message }; }
 }
+
+// ==========================================
+// [국민 용돈기입장 탭] 매점 시세표 · 간식 신청
+// ==========================================
+
+// ── 매점 시세표: 우리 반 도매상인들이 파는 모든 상품 + 내가 지금 사면 얼마인지(인플레이션) ──
+function getStorePriceBoard(classCode, studentNo) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo));
+    var stuData = getOrCreateStudentsSheet(ss).getDataRange().getValues();
+    var nameMap = {}, card = 0;
+    for (var k = 1; k < stuData.length; k++) {
+      if (cleanText(stuData[k][0]) !== cc) continue;
+      var no = cleanText(String(stuData[k][1]));
+      nameMap[no] = String(stuData[k][2] || '');
+      if (no === sno) card = Number(stuData[k][4]) || 0;
+    }
+    var data = getOrCreateWholesaleItemsSheet(ss).getDataRange().getValues();
+    var list = [];
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) !== cc) continue;
+      var seller = cleanText(String(data[i][1]));
+      var price = Number(data[i][3]) || 0;
+      list.push({ seller: seller, sellerName: nameMap[seller] || '', name: String(data[i][2] || ''), price: price,
+                  stock: Number(data[i][4]) || 0, sold: Number(data[i][5]) || 0,
+                  myPrice: card >= WS_INFLATION_LINE ? Math.round(price * WS_INFLATION_RATE) : price });
+    }
+    list.sort(function (a, b) { return a.price - b.price; });
+    return { success: true, list: list, card: card, inflated: sno !== '' && card >= WS_INFLATION_LINE,
+             line: WS_INFLATION_LINE, rate: WS_INFLATION_RATE };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// ── 간식 신청 ──
+// SnackMenu:     [0]학급코드 [1]메뉴(JSON 배열: {name, price, desc})
+// SnackRequests: [0]학급코드 [1]신청ID [2]학생번호 [3]이름 [4]간식 [5]단가 [6]수량 [7]총액 [8]메모 [9]상태(대기/승인/반려/취소) [10]신청일 [11]처리일 [12]처리메모
+// 학생이 신청 → 선생님이 승인하면 그때 카드에서 돈이 빠지고 용돈기입장에 "[간식] 이름 N개"로 남습니다.
+function _snackMenuSheet(ss, create) {
+  var sheet = ss.getSheetByName('SnackMenu');
+  if (!sheet && create) { sheet = ss.insertSheet('SnackMenu'); sheet.appendRow(['학급코드', '메뉴']); }
+  return sheet;
+}
+function _snackReqSheet(ss) {
+  var sheet = ss.getSheetByName('SnackRequests');
+  if (!sheet) {
+    sheet = ss.insertSheet('SnackRequests');
+    sheet.appendRow(['학급코드','신청ID','학생번호','이름','간식','단가','수량','총액','메모','상태','신청일','처리일','처리메모']);
+  }
+  return sheet;
+}
+function _snackMenuOf(cc) {
+  var sheet = _snackMenuSheet(SpreadsheetApp.getActiveSpreadsheet(), false);
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (cleanText(data[i][0]) === cc) {
+      try { var l = JSON.parse(String(data[i][1] || '[]')); return Array.isArray(l) ? l : []; } catch (pe) { return []; }
+    }
+  }
+  return [];
+}
+
+function getSnackMenu(classCode) {
+  try { return { success: true, list: _snackMenuOf(cleanText(classCode)) }; }
+  catch (e) { return { success: false, msg: e.message }; }
+}
+
+function setSnackMenu(classCode, menuJson) {
+  try {
+    var cc = cleanText(classCode);
+    if (!cc) return { success: false, msg: '학급 코드가 없습니다. 다시 로그인해 주세요.' };
+    var raw = typeof menuJson === 'string' ? JSON.parse(menuJson || '[]') : (menuJson || []);
+    if (!Array.isArray(raw)) return { success: false, msg: '메뉴 형식이 올바르지 않습니다.' };
+    var list = [], seen = {};
+    for (var r = 0; r < raw.length; r++) {
+      var m = raw[r] || {};
+      var name = String(m.name || '').trim().slice(0, 30);
+      if (!name) continue;
+      if (seen[name]) return { success: false, msg: '"' + name + '" 간식이 두 번 적혀 있어요.' };
+      seen[name] = 1;
+      var price = parseInt(m.price);
+      list.push({ name: name, price: isNaN(price) || price < 0 ? 0 : price, desc: String(m.desc || '').trim().slice(0, 60) });
+    }
+    if (list.length > 50) return { success: false, msg: '간식 메뉴는 50개까지 적을 수 있습니다.' };
+    var sheet = _snackMenuSheet(SpreadsheetApp.getActiveSpreadsheet(), true);
+    var data = sheet.getDataRange().getValues(), json = JSON.stringify(list);
+    var msg = '간식 메뉴 ' + list.length + '개를 저장했습니다!';
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(json); return { success: true, list: list, msg: msg }; }
+    }
+    sheet.appendRow([cc, json]);
+    return { success: true, list: list, msg: msg };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// studentNo를 비우면(선생님) 반 전체 신청을 돌려줍니다.
+function getSnackRequests(classCode, studentNo) {
+  try {
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo));
+    var data = _snackReqSheet(SpreadsheetApp.getActiveSpreadsheet()).getDataRange().getValues();
+    var list = [], pending = 0;
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) !== cc) continue;
+      var who = cleanText(String(data[i][2]));
+      if (sno !== '' && who !== sno) continue;
+      var st = String(data[i][9] || '대기');
+      if (st === '대기') pending++;
+      var d = data[i][10];
+      list.push({ id: String(data[i][1]), studentNo: who, name: String(data[i][3] || ''), item: String(data[i][4] || ''),
+                  price: Number(data[i][5]) || 0, qty: Number(data[i][6]) || 0, total: Number(data[i][7]) || 0,
+                  memo: String(data[i][8] || ''), status: st,
+                  date: d instanceof Date ? Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(d || ''),
+                  note: String(data[i][12] || '') });
+    }
+    list.reverse();
+    return { success: true, list: list.slice(0, 200), pending: pending };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+function requestSnack(classCode, studentNo, itemName, qty, memo) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo));
+    if (!cc || sno === '') return { success: false, msg: '로그인 정보가 없습니다. 다시 로그인해 주세요.' };
+    var n = parseInt(qty);
+    if (isNaN(n) || n < 1 || n > 20) return { success: false, msg: '수량은 1개에서 20개 사이로 적어 주세요.' };
+    var name = String(itemName || '').trim();
+    var item = null;
+    _snackMenuOf(cc).forEach(function (m) { if (m.name === name) item = m; });
+    if (!item) return { success: false, msg: '간식 메뉴에 없는 간식입니다. 화면을 새로고침해 주세요.' };
+    var stuData = getOrCreateStudentsSheet(ss).getDataRange().getValues();
+    var stuName = null, card = 0;
+    for (var k = 1; k < stuData.length; k++) {
+      if (cleanText(stuData[k][0]) === cc && cleanText(String(stuData[k][1])) === sno) { stuName = String(stuData[k][2] || ''); card = Number(stuData[k][4]) || 0; break; }
+    }
+    if (stuName === null) return { success: false, msg: '학생 정보를 찾을 수 없습니다.' };
+    var total = item.price * n;
+    var sheet = _snackReqSheet(ss), data = sheet.getDataRange().getValues(), waiting = 0;
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) === cc && cleanText(String(data[i][2])) === sno && String(data[i][9]) === '대기') waiting += Number(data[i][7]) || 0;
+    }
+    if (card < waiting + total) return { success: false, msg: '카드 잔액이 부족해요.\n카드: ' + card.toLocaleString() + ' 머니\n이번 신청: ' + total.toLocaleString() + ' 머니' + (waiting ? '\n이미 기다리는 신청: ' + waiting.toLocaleString() + ' 머니' : '') };
+    var id = 'SN_' + new Date().getTime() + '_' + Math.floor(Math.random() * 1000);
+    sheet.appendRow([cc, id, sno, stuName, item.name, item.price, n, total, String(memo || '').trim().slice(0, 60), '대기', getTodayStr(), '', '']);
+    return { success: true, msg: item.name + ' ' + n + '개를 신청했어요! 선생님이 승인하면 카드에서 ' + total.toLocaleString() + ' 머니가 빠져요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+function _snackFind(sheet, cc, reqId) {
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc && String(data[i][1]) === String(reqId)) return { row: i + 1, v: data[i] };
+  return null;
+}
+
+function cancelSnackRequest(classCode, studentNo, reqId) {
+  try {
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo));
+    var sheet = _snackReqSheet(SpreadsheetApp.getActiveSpreadsheet()), f = _snackFind(sheet, cc, reqId);
+    if (!f) return { success: false, msg: '신청을 찾을 수 없습니다.' };
+    if (cleanText(String(f.v[2])) !== sno) return { success: false, msg: '내 신청만 취소할 수 있어요.' };
+    if (String(f.v[9]) !== '대기') return { success: false, msg: '이미 ' + f.v[9] + '된 신청은 취소할 수 없어요.' };
+    sheet.getRange(f.row, 10).setValue('취소'); sheet.getRange(f.row, 12).setValue(getTodayStr());
+    return { success: true, msg: f.v[4] + ' 신청을 취소했어요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 선생님 승인: 이때 카드에서 돈이 빠짐
+function approveSnackRequest(classCode, reqId) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode);
+    var sheet = _snackReqSheet(ss), f = _snackFind(sheet, cc, reqId);
+    if (!f) return { success: false, msg: '신청을 찾을 수 없습니다.' };
+    if (String(f.v[9]) !== '대기') return { success: false, msg: '이미 ' + f.v[9] + '된 신청입니다.' };
+    var sno = cleanText(String(f.v[2])), total = Number(f.v[7]) || 0;
+    var stuSheet = getOrCreateStudentsSheet(ss), stuData = stuSheet.getDataRange().getValues(), row = -1, card = 0;
+    for (var k = 1; k < stuData.length; k++) {
+      if (cleanText(stuData[k][0]) === cc && cleanText(String(stuData[k][1])) === sno) { row = k + 1; card = Number(stuData[k][4]) || 0; break; }
+    }
+    if (row === -1) return { success: false, msg: sno + '번 학생을 찾을 수 없습니다.' };
+    if (card < total) return { success: false, msg: sno + '번 ' + f.v[3] + '의 카드 잔액이 부족해요. (카드 ' + card.toLocaleString() + ' / 필요 ' + total.toLocaleString() + ' 머니)' };
+    var newCard = card - total;
+    stuSheet.getRange(row, 5).setValue(newCard);
+    getOrCreateTransSheet(ss).appendRow([getTodayStr(), cc, sno, '[간식] ' + f.v[4] + ' ' + f.v[6] + '개', '', total, newCard, '간식']);
+    sheet.getRange(f.row, 10).setValue('승인'); sheet.getRange(f.row, 12).setValue(getTodayStr());
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    return { success: true, msg: sno + '번 ' + f.v[3] + ' · ' + f.v[4] + ' ' + f.v[6] + '개 승인! 카드에서 ' + total.toLocaleString() + ' 머니를 뺐어요.', newCard: newCard };
+  } catch (e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
+}
+
+function rejectSnackRequest(classCode, reqId, reason) {
+  try {
+    var cc = cleanText(classCode);
+    var sheet = _snackReqSheet(SpreadsheetApp.getActiveSpreadsheet()), f = _snackFind(sheet, cc, reqId);
+    if (!f) return { success: false, msg: '신청을 찾을 수 없습니다.' };
+    if (String(f.v[9]) !== '대기') return { success: false, msg: '이미 ' + f.v[9] + '된 신청입니다.' };
+    sheet.getRange(f.row, 10).setValue('반려'); sheet.getRange(f.row, 12, 1, 2).setValues([[getTodayStr(), String(reason || '').trim().slice(0, 60)]]);
+    return { success: true, msg: f.v[3] + '의 ' + f.v[4] + ' 신청을 반려했어요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
+}

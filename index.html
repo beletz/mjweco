@@ -1003,7 +1003,7 @@
     </div>
   </div>
   <div style="padding:24px 5%;">
-    <div class="cit-body">
+    <div class="cit-body" id="w-body">
       <div class="lp">
         <div class="pl"><i class="fa-solid fa-pencil" style="color:var(--purple);"></i> 기록하기</div>
         <div id="w-teacher-pick" style="display:none;">
@@ -1019,9 +1019,60 @@
       <div class="rp">
         <div class="rt">
           <div class="rt-title"><i class="fa-solid fa-user" style="color:#94A3B8;font-size:13px;"></i> 나의 활동 기록 <span class="cnt-bdg" id="s-tx-cnt">0건</span></div>
-          <div class="ts"><div class="dt act">용돈기입장(체크카드)</div></div>
+          <div class="ts" id="w-tabs">
+            <div class="dt act" onclick="walletTab('wt-book',this)">💳 용돈기입장(체크카드)</div>
+            <div class="dt" onclick="walletTab('wt-hw',this)">📚 내 과제 현황</div>
+            <div class="dt" onclick="walletTab('wt-snack',this)">🍪 간식 신청 <span class="mh-badge" id="wt-snack-badge" style="display:none;"></span></div>
+            <div class="dt" onclick="walletTab('wt-store',this)">🏪 매점 시세표</div>
+            <div class="dt" onclick="walletTab('wt-law',this)">📜 벌금 법전</div>
+            <div class="dt" onclick="walletTab('wt-stock',this)">📈 나의 주식</div>
+          </div>
         </div>
-        <div class="tc act">
+        <!-- 📚 내 과제 현황 -->
+        <div class="tc" id="wt-hw"><div id="wt-hw-box"><div class="empty-msg">불러오는 중...</div></div></div>
+        <!-- 🍪 간식 신청 -->
+        <div class="tc" id="wt-snack">
+          <div id="wt-snack-teacher" style="display:none;">
+            <div class="wt-sub"><span>🧑‍🏫 간식 메뉴 적기 (선생님)</span>
+              <span style="margin-left:auto;display:flex;gap:8px;">
+                <button class="btn btn-outline btn-sm" onclick="snackMenuAddRow()"><i class="fa-solid fa-plus"></i> 줄 추가</button>
+                <button class="btn btn-green btn-sm" onclick="snackMenuSave()"><i class="fa-solid fa-floppy-disk"></i> 저장</button>
+              </span>
+            </div>
+            <div id="wt-snack-editor"></div>
+            <div class="wt-sub" style="margin-top:22px;"><span>📥 들어온 간식 신청</span></div>
+            <div id="wt-snack-all"></div>
+            <div class="wt-sub" style="margin-top:22px;"><span>👀 학생 화면 미리보기</span></div>
+          </div>
+          <div class="info-box">🍪 먹고 싶은 간식을 골라 <b>신청</b>하세요. 선생님이 <b>승인</b>하면 그때 카드에서 돈이 빠지고 용돈기입장에 기록돼요.</div>
+          <div id="wt-snack-menu" class="wt-snack-grid"></div>
+          <div class="wt-sub" style="margin-top:20px;"><span>🧾 나의 신청 내역</span></div>
+          <div id="wt-snack-mine"></div>
+        </div>
+        <!-- 🏪 매점 시세표 -->
+        <div class="tc" id="wt-store"><div id="wt-store-box"><div class="empty-msg">불러오는 중...</div></div></div>
+        <!-- 📜 벌금 법전 -->
+        <div class="tc" id="wt-law"><div id="wt-law-box"><div class="empty-msg">불러오는 중...</div></div></div>
+        <!-- 📈 나의 주식 -->
+        <div class="tc" id="wt-stock">
+          <div class="stk-top" style="margin-bottom:10px;">
+            <div class="wt-sub" style="margin:0;"><span>📊 실시간 주식 시세판</span></div>
+            <div class="stk-next" id="wt-stk-next">불러오는 중...</div>
+          </div>
+          <div class="stk-cards" id="wt-stk-cards"><div class="empty-msg">시장 불러오는 중...</div></div>
+          <div class="stk-grid">
+            <div class="sc" style="margin:0;">
+              <div class="st"><i class="fa-solid fa-briefcase" style="color:var(--red);"></i> 나의 보유 주식</div>
+              <div id="wt-stk-hold"></div>
+              <div style="font-size:13px;color:var(--gray);margin-top:10px;">💡 주식을 사고팔려면 <b>증권회사 직원</b>에게 부탁하세요.</div>
+            </div>
+            <div class="sc" style="margin:0;">
+              <div class="st"><i class="fa-solid fa-newspaper" style="color:var(--blue);"></i> 주식 정보함</div>
+              <div id="wt-stk-info"></div>
+            </div>
+          </div>
+        </div>
+        <div class="tc act" id="wt-book">
           <div class="crb">
             <div class="crc"><i class="fa-solid fa-crown" style="font-size:18px;color:var(--purple);margin-bottom:1px;"></i><div class="cgn" id="s-grade-num">-</div></div>
             <div><div class="cit">나의 신용: <span id="s-grade-lbl">--</span></div><div class="cis">현재 점수: <span id="s-credit">0</span> 점</div></div>
@@ -1800,6 +1851,7 @@
 <script src="currency.js"></script>
 <script src="result-popup.js"></script>
 <script src="stock-market.js"></script>
+<script src="wallet-tabs.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
 <script src="ui-motion.js"></script>
 <script src="ui-colors.js"></script>

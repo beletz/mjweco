@@ -30,6 +30,8 @@
     // 부동산·증권·아바타
     buyRealEstate: '부동산 구매', addRealEstate: '부동산 등록', buyLottery: '구매', tradeStock: '주식 거래', runStockStep: '가격 돌리기', setStockAuto: '자동으로 돌리기 설정', setStockSettings: '종목 설정 저장', addStockRequest: '신청',
     buyAvatarItem: '아이템 구매', saveAvatar: '아바타 저장', setAvatarPrices: '가격 저장',
+    // 간식 신청
+    requestSnack: '간식 신청', cancelSnackRequest: '간식 신청 취소', approveSnackRequest: '간식 승인', rejectSnackRequest: '간식 반려', setSnackMenu: '간식 메뉴 저장',
     // 숙제
     addHomework: '숙제 등록', deleteHomework: '숙제 삭제', submitHomeworkReport: '숙제 보고',
     approveHomeworkReport: '숙제 승인', rejectHomeworkReport: '숙제 반려',

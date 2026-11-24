@@ -1021,6 +1021,7 @@ function openBank(){
 var _walletMode = 'exp';
 
 function initWalletPanel(){
+  if(typeof walletTabsReset==="function") walletTabsReset();
   var pick = $('w-teacher-pick'), incBtn = $('w-inc-btn');
   if(_isTeacher){
     pick.style.display = 'block';
@@ -1061,11 +1062,13 @@ function walletTeacherPick(){
     initStudentWallet({card:0,bank:0,credit:0});
     $('s-tx-tbody').innerHTML = '<tr><td colspan="5" class="empty-msg">학생을 선택하세요.</td></tr>';
     $('s-tx-cnt').textContent = '0건';
+    if(typeof walletTabRefresh==='function') walletTabRefresh();
     return;
   }
   var stu = (_stuList||[]).find(function(s){ return String(s.studentNo)===sno; });
   if(stu) initStudentWallet(stu);
   loadTx(_cc || _adminCC, sno, 's-tx-tbody', 's-tx-cnt');
+  if(typeof walletTabRefresh==='function') walletTabRefresh();
 }
 
 function setWalletMode(m){

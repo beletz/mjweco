@@ -106,6 +106,7 @@
       .setStockAuto(cc(), on === true);
   };
 
+  window.stkSparkline = function (a, u) { return sparkline(a, u); };
   function sparkline(arr, up) {
     if (!arr || arr.length < 2) return '';
     var w = 220, h = 54, min = Math.min.apply(null, arr), max = Math.max.apply(null, arr), span = (max - min) || 1;
