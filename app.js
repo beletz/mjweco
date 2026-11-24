@@ -839,7 +839,7 @@ function loadTeacherWallet(){
   $('t-stu-label').textContent=sno+'번 '+(stu.name||'');
   var g=creditGrade(stu.credit||0);$('t-grade-num').textContent=g.num;$('t-grade-lbl').textContent=g.label;
   $('t-credit').textContent=stu.credit||0;
-  $('t-total').textContent=(Number(stu.card||0)+Number(stu.bank||0)).toLocaleString()+' 머니';
+  $('t-total').textContent=(Number(stu.card||0)+Number(stu.bank||0)+Number(stu.stock||0)).toLocaleString()+' 머니';
   $('t-card').textContent=Number(stu.card||0).toLocaleString()+' 머니';
   $('t-bank').textContent=Number(stu.bank||0).toLocaleString()+' 머니';
   loadTx(_adminCC,sno,'t-tx-tbody','t-tx-cnt');
@@ -930,7 +930,7 @@ function initStudentWallet(r){
   var g=creditGrade(Number(r.credit)||0);
   $('s-grade-num').textContent=g.num;$('s-grade-lbl').textContent=g.label;
   $('s-credit').textContent=r.credit||0;
-  $('s-total').textContent=(Number(r.card||0)+Number(r.bank||0)).toLocaleString()+' 머니';
+  $('s-total').textContent=(Number(r.card||0)+Number(r.bank||0)+Number(r.stock||0)).toLocaleString()+' 머니';
   $('s-card').textContent=Number(r.card||0).toLocaleString()+' 머니';
   $('s-bank').textContent=Number(r.bank||0).toLocaleString()+' 머니';
 }
@@ -982,6 +982,7 @@ function openStudentPanel(viewId){
     return;
   }
   if(viewId==='view-police')      { loadFineStudents(); loadFineLog(); loadFineLawChips(); }
+  if(viewId==='view-stock')       { if(typeof initStockMarket==='function') initStockMarket(); }
   if(viewId==='view-credit-mgr')  { loadCreditMgrList(); }
   if(viewId==='view-tax-office')  { loadTaxOfficeDashboard(); }
   if(viewId==='view-asset-inspect'){ loadAssetInspect(); }
@@ -2354,9 +2355,10 @@ function loadTaxStats(){
         '<td>'+esc(s.name)+'</td>'+
         '<td class="ac">'+s.card.toLocaleString()+'</td>'+
         '<td class="bc">'+s.bank.toLocaleString()+'</td>'+
+        '<td style="color:#7C3AED;">'+Number(s.stock||0).toLocaleString()+'</td>'+
         '<td><strong>'+s.total.toLocaleString()+'</strong></td></tr>';
     });
-    tb.innerHTML=h||'<tr><td colspan="5" class="empty-msg">데이터 없음</td></tr>';
+    tb.innerHTML=h||'<tr><td colspan="6" class="empty-msg">데이터 없음</td></tr>';
   }).getClassStats(_cc);
 }
 
@@ -2389,7 +2391,7 @@ function loadAssetInspect(){
     if(!r.success) return;
 
     // 요약 카드 업데이트
-    var totalAll = r.totalCard + r.totalBank;
+    var totalAll = r.totalCard + r.totalBank + (r.totalStock||0);
     $('ai-total').textContent = totalAll.toLocaleString()+' 머니';
     $('ai-card').textContent  = r.totalCard.toLocaleString()+' 머니';
     $('ai-bank').textContent  = r.totalBank.toLocaleString()+' 머니';
@@ -2409,7 +2411,7 @@ function loadAssetInspect(){
     r.students.forEach(function(s,i){
       var rank  = i+1;
       var rc    = rank===1?'gold':rank===2?'silver':rank===3?'bronze':'';
-      var total = (s.card||0)+(s.bank||0);
+      var total = (s.card||0)+(s.bank||0)+(s.stock||0);
       var g     = creditGrade(s.credit||0);
 
       // 비율 계산
@@ -2466,6 +2468,15 @@ function loadAssetInspect(){
       h += '  </div>';
       h += '  <div style="font-size:10px;color:#94A3B8;text-align:right;margin-top:2px;">전체의 '+bankOfTotal+'%</div>';
       h += '</div>';
+
+      // ── 주식 평가액 (가진 학생만) ──
+      if((s.stock||0)>0){
+        var stockOfTotal = total>0 ? Math.round(s.stock/total*100) : 0;
+        h += '<div style="margin:-4px 0 12px;display:flex;justify-content:space-between;align-items:center;background:#F5F3FF;border-radius:10px;padding:7px 10px;">';
+        h += '  <span style="font-size:12px;font-weight:700;color:#7C3AED;">📈 주식 (지금 가격)</span>';
+        h += '  <span style="font-size:13px;font-weight:700;color:#7C3AED;">'+Number(s.stock).toLocaleString()+' 머니 <span style="font-size:10px;color:#94A3B8;">('+stockOfTotal+'%)</span></span>';
+        h += '</div>';
+      }
 
       // ── 구성 비율 바 (하단) ──
       h += '<div style="display:flex;gap:8px;align-items:center;">';
@@ -3460,7 +3471,7 @@ var INCOME_TAX_RICH_LINE = 5000;
 function isIncomeTaxCol(col){
   return !!col && col.type==='deduct' && (col.id==='tax' || String(col.name||'').indexOf('소득세')!==-1);
 }
-function totalAssetsOf(s){ return s ? (Number(s.card)||0)+(Number(s.bank)||0) : 0; }
+function totalAssetsOf(s){ return s ? (Number(s.card)||0)+(Number(s.bank)||0)+(Number(s.stock)||0) : 0; }  // 카드 + 은행 + 주식 평가액
 function incomeTaxRate(s){ return totalAssetsOf(s)>=INCOME_TAX_RICH_LINE ? 0.2 : 0.1; }
 function incomeTaxFor(base, s){
   base=Number(base)||0;
@@ -3519,7 +3530,7 @@ function renderSmartPayrollTable(){
   cols.forEach(function(col){
     var cc=col.type==='deduct'?'#EF4444':'#10B981';
     var sign=col.type==='deduct'?'(-)':'(+)';
-    var hint=isIncomeTaxCol(col)?'<div style="font-size:12px;color:#94A3B8;margin-top:3px;">기본금의 10% · 총 자산 '+INCOME_TAX_RICH_LINE.toLocaleString()+' 머니 이상은 20%</div>':'';
+    var hint=isIncomeTaxCol(col)?'<div style="font-size:12px;color:#94A3B8;margin-top:3px;">기본금의 10% · 총 자산(카드+은행+주식) '+INCOME_TAX_RICH_LINE.toLocaleString()+' 머니 이상은 20%</div>':'';
     h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:'+cc+';border-bottom:2px solid #E2E8F0;white-space:nowrap;min-width:150px;">'+esc(col.name)+' '+sign+hint+'</th>';
   });
   h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:#10B981;border-bottom:2px solid #E2E8F0;white-space:nowrap;background:#F0FDF4;min-width:130px;">실수령액</th>';
@@ -4460,6 +4471,8 @@ var _txTypeMap = {
   '세금':           {label:'🧾 국세청',     bg:'#FEF3C7', tc:'#92400E'},
   '부동산':         {label:'🏠 부동산',     bg:'#ECFDF5', tc:'#065F46'},
   '복권':           {label:'📈 증권회사',   bg:'#F5F3FF', tc:'#5B21B6'},
+  '주식매수':       {label:'📈 주식 매수',  bg:'#FFF1F2', tc:'#BE123C'},
+  '주식매도':       {label:'📉 주식 매도',  bg:'#EFF6FF', tc:'#1D4ED8'},
   '도매구매':       {label:'🛒 도매구매',   bg:'#FFFBEB', tc:'#B45309'},
   '도매판매':       {label:'🛒 도매판매',   bg:'#ECFDF5', tc:'#065F46'},
   '신용위원장조정': {label:'⭐ 신용조정',   bg:'#FFFBEB', tc:'#B45309'},

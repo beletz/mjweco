@@ -1240,14 +1240,56 @@
         <div class="back" style="margin:0;font-size:20px;" onclick="go('view-student-dashboard')"><i class="fa-solid fa-arrow-left"></i></div>
         <div>
           <div style="font-size:16px;font-weight:700;">증권회사 <i class="fa-solid fa-arrow-trend-up" style="color:var(--purple);"></i></div>
-          <div style="font-size:13px;color:var(--gray);">음악 저작권 투자 및 복권</div>
+          <div style="font-size:13px;color:var(--gray);">AI 모의 투자 및 복권</div>
         </div>
       </div>
       <button class="btn btn-outline" style="padding:10px 18px;font-size:13px;" onclick="studentLogout()"><i class="fa-solid fa-arrow-right-from-bracket"></i> 로그아웃</button>
     </div>
   </div>
   <div style="padding:24px 5%;">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+    <div id="stk-tabs" class="panel-tabs" style="margin-bottom:22px;">
+      <div class="panel-tab act" onclick="stockTab('stk-market',this)">🤖 AI 모의 투자</div>
+      <div class="panel-tab" onclick="stockTab('stk-lottery',this)">🎫 복권</div>
+    </div>
+    <div id="stk-panels">
+    <!-- 탭 1: AI 모의 투자 -->
+    <div id="stk-market" class="panel-content act">
+      <div class="stk-top">
+        <div>
+          <div style="font-family:'Jua',sans-serif;font-size:22px;color:#1E293B;">🤖 AI 모의 투자</div>
+          <div style="font-size:13px;color:#64748B;">AI 시장 엔진이 1시간마다 가격을 바꾸는 <b>가상 주식</b>이에요. 진짜 회사가 아니에요.</div>
+        </div>
+        <div class="stk-next">⏱️ 다음 가격 변동까지 <b id="stk-next">-</b></div>
+      </div>
+      <div id="stk-cards" class="stk-cards"><div class="empty-msg">시장 불러오는 중...</div></div>
+      <div class="stk-grid">
+        <div class="sc">
+          <div class="st"><i class="fa-solid fa-right-left" style="color:var(--purple);"></i> 주식 사고팔기</div>
+          <div class="ig"><label>고객</label>
+            <select id="stk-customer" class="ci" style="margin-bottom:0;" onchange="stkLoadHoldings()"><option value="">-- 고객 선택 --</option></select>
+          </div>
+          <div class="ig" style="margin-top:11px;"><label>종목</label>
+            <select id="stk-stock" class="ci" style="margin-bottom:0;" onchange="stkCalc()"></select>
+          </div>
+          <div class="ig" style="margin-top:11px;"><label>수량</label>
+            <div class="amr"><input class="ci" id="stk-qty" type="number" min="1" value="1" oninput="stkCalc()" style="margin-bottom:0;"><span class="ul">주</span></div>
+          </div>
+          <div class="stk-est" id="stk-est">-</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+            <button class="sb stk-buy" onclick="stkTrade('buy')">사기 (매수)</button>
+            <button class="sb stk-sell" onclick="stkTrade('sell')">팔기 (매도)</button>
+          </div>
+          <div class="stk-holdings" id="stk-holdings"><div class="empty-msg" style="padding:14px;">고객을 고르면 가진 주식이 보여요.</div></div>
+        </div>
+        <div class="sc">
+          <div class="st"><i class="fa-solid fa-newspaper" style="color:var(--orange);"></i> AI 뉴스 <span style="font-size:12px;color:var(--gray);font-weight:600;margin-left:6px;">가격이 크게 움직인 이유</span></div>
+          <div id="stk-news"><div class="empty-msg">불러오는 중...</div></div>
+        </div>
+      </div>
+    </div>
+    <!-- 탭 2: 복권 -->
+    <div id="stk-lottery" class="panel-content">
+    <div style="display:grid;grid-template-columns:1fr;gap:18px;max-width:560px;">
       <div class="sc">
         <div class="st"><i class="fa-solid fa-ticket" style="color:var(--yellow);"></i> 복권 구매</div>
         <div class="info-box">🎫 <strong>당첨 확률 안내</strong><br>🥇 1등 (x10배): 0.5% | 🥈 2등 (x5배): 3% | 🥉 3등 (x2배): 10% | 😢 꽝: 86.5%</div>
@@ -1259,14 +1301,9 @@
           <div style="font-size:14px;color:var(--gray);margin-top:8px;" id="lottery-sub"></div>
         </div>
       </div>
-      <div class="sc">
-        <div class="st"><i class="fa-solid fa-music" style="color:var(--purple);"></i> 음악 저작권 투자</div>
-        <div class="info-box">🎵 인기 음악의 저작권을 구매해 수익을 받아보세요! (현재 시즌: 준비 중)</div>
-        <div style="text-align:center;padding:40px 20px;color:#CBD5E1;">
-          <i class="fa-solid fa-music" style="font-size:48px;margin-bottom:15px;display:block;"></i>다음 시즌에 오픈 예정입니다
-        </div>
-      </div>
     </div>
+    </div><!-- /stk-lottery -->
+    </div><!-- /stk-panels -->
   </div>
 </div>
 
@@ -1459,8 +1496,8 @@
             </div>
             <div class="stw">
               <table class="stb">
-                <thead><tr><th>번호</th><th>이름</th><th>카드잔액</th><th>은행잔액</th><th>총 자산</th></tr></thead>
-                <tbody id="to-stats-tbody"><tr><td colspan="5" class="empty-msg">새로고침을 눌러주세요.</td></tr></tbody>
+                <thead><tr><th>번호</th><th>이름</th><th>카드잔액</th><th>은행잔액</th><th>주식</th><th>총 자산</th></tr></thead>
+                <tbody id="to-stats-tbody"><tr><td colspan="6" class="empty-msg">새로고침을 눌러주세요.</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -1735,6 +1772,7 @@
 <script src="site-name.js"></script>
 <script src="currency.js"></script>
 <script src="result-popup.js"></script>
+<script src="stock-market.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
 <script src="ui-motion.js"></script>
 <script src="ui-colors.js"></script>

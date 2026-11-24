@@ -165,6 +165,7 @@ function getStudentList(classCode) {
     var data = sheet.getDataRange().getValues();
     var cc = cleanText(classCode);
     var list = [];
+    var stockMap = _stockValueMap(cc);   // 주식 평가액 (총 자산에 포함)
     for (var i = 1; i < data.length; i++) {
       if (cleanText(data[i][0]) === cc) {
         list.push({
@@ -174,7 +175,8 @@ function getStudentList(classCode) {
           card:      Number(data[i][4]) || 0,
           bank:      Number(data[i][5]) || 0,
           credit:    Number(data[i][6]) || 0,
-          code:      data[i][7] || ''
+          code:      data[i][7] || '',
+          stock:     stockMap[cleanText(String(data[i][1]))] || 0
         });
       }
     }
@@ -319,7 +321,8 @@ function loginStudent(classCode, studentNo, studentCode) {
           job:       data[i][3]||'',
           card:      Number(data[i][4])||0,
           bank:      Number(data[i][5])||0,
-          credit:    Number(data[i][6])||0
+          credit:    Number(data[i][6])||0,
+          stock:     _stockValueMap(cc)[sno] || 0
         };
       }
     }
@@ -1465,6 +1468,225 @@ function buyLottery(classCode, studentNo, amount) {
 }
 
 // ==========================================
+// [증권] AI 모의 투자 — 가상 주식 3종목
+// 가격은 "AI 시장 엔진"(이 아래 계산)이 1시간마다 정해진 규칙과 난수로 바꿉니다.
+//  - 학급 코드 + 종목 + 시간으로 난수를 만들기 때문에, 같은 시간에는 누가 보든 같은 가격이 나옵니다(서버 예약 작업 필요 없음).
+//  - 가끔 뉴스 사건이 생겨 크게 오르거나 내립니다. 뉴스 문장은 아래 템플릿에서 고릅니다.
+//  - 외부 AI(API 키)는 쓰지 않습니다. 공개 사이트에 키를 넣으면 누구나 볼 수 있어서 위험하기 때문입니다.
+// StockHoldings: [0]학급코드 [1]학생번호 [2]종목ID [3]보유수량 [4]평균매수가
+// ==========================================
+var STOCK_TICK_MS = 60 * 60 * 1000;               // 1시간마다 가격 변동
+var STOCK_EPOCH   = Date.UTC(2026, 10, 1, 0, 0, 0); // 시장이 열린 기준 시각 (2026-11-01)
+var STOCK_LIST = [
+  { id: 'cookie', name: '달콤쿠키',     emoji: '🍪', sector: '과자·식품', base: 1000, vol: 0.007, drift: 0.0002,
+    good: ['신제품 "무지개 쿠키"가 학교 앞 매점에서 품절됐어요', '급식 디저트로 뽑혔어요', '새 공장을 지어 더 싸게 만들 수 있게 됐어요', '해외로 수출을 시작했어요'],
+    bad:  ['설탕 값이 크게 올랐어요', '쿠키 포장이 잘 안 뜯긴다는 불만이 많아요', '경쟁 회사가 더 싼 쿠키를 내놓았어요', '공장 기계가 고장 나서 하루 쉬었어요'] },
+  { id: 'rocket', name: '별빛우주항공', emoji: '🚀', sector: '우주·과학', base: 2000, vol: 0.018, drift: 0.0003,
+    good: ['로켓 발사에 성공했어요', '나라에서 큰 우주 탐사 계약을 맺었어요', '달 기지 설계 대회에서 1등을 했어요', '새 엔진 실험에 성공했어요'],
+    bad:  ['로켓 발사가 날씨 때문에 미뤄졌어요', '시험 비행 중 부품에 문제가 생겼어요', '우주 사업 예산이 줄어들었어요', '중요한 기술자가 다른 회사로 떠났어요'] },
+  { id: 'game',   name: '픽셀게임즈',   emoji: '🎮', sector: '게임·놀이', base: 1500, vol: 0.012, drift: 0.00025,
+    good: ['새 게임이 다운로드 1위를 했어요', '게임 대회를 열어 사람들이 많이 모였어요', '인기 캐릭터 인형이 잘 팔려요', '새 업데이트가 재미있다는 칭찬을 받았어요'],
+    bad:  ['게임 서버가 하루 동안 멈췄어요', '새 게임 출시가 늦어진대요', '버그가 많다는 소식이 퍼졌어요', '비슷한 게임이 새로 나와 손님을 빼앗겼어요'] }
+];
+
+function _stockHash(str) {
+  var h = 2166136261;
+  for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function _stockRand(seed) { // 0~1 사이 난수 (같은 seed면 항상 같은 값)
+  var t = (seed + 0x6D2B79F5) >>> 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function _stockTickNow() { return Math.max(0, Math.floor((Date.now() - STOCK_EPOCH) / STOCK_TICK_MS)); }
+function _stockTickLabel(tick) {
+  return Utilities.formatDate(new Date(STOCK_EPOCH + tick * STOCK_TICK_MS), Session.getScriptTimeZone(), 'MM-dd HH:00');
+}
+
+// 한 종목의 가격 흐름을 처음부터 지금까지 계산
+function _stockSimulate(cc, s, upto) {
+  var price = s.base, prices = [], news = [];
+  for (var t = 0; t <= upto; t++) {
+    var key = cc + '|' + s.id + '|' + t;
+    var r1 = _stockRand(_stockHash(key + '|a')), r2 = _stockRand(_stockHash(key + '|b')), r3 = _stockRand(_stockHash(key + '|c'));
+    var noise = (r1 + r2 + r3 - 1.5) * 2 * s.vol;               // 평소의 작은 출렁임
+    var pull = 0;                                                // 너무 오르거나 내리면 제자리로 돌아오려는 힘
+    if (price > s.base * 2.5) pull = -0.01; else if (price < s.base * 0.4) pull = 0.01;
+    var change = s.drift + noise + pull;
+    var ev = _stockRand(_stockHash(key + '|ev'));
+    if (t > 0 && ev < 0.015) {                                   // 1.5% 확률로 뉴스 사건 (종목마다 대략 사흘에 한 번)
+      var up = _stockRand(_stockHash(key + '|dir')) < 0.52;
+      var size = 0.04 + _stockRand(_stockHash(key + '|size')) * 0.08;  // 4~12%
+      var pool = up ? s.good : s.bad;
+      var line = pool[Math.floor(_stockRand(_stockHash(key + '|txt')) * pool.length)];
+      change += up ? size : -size;
+      news.push({ tick: t, stockId: s.id, up: up, pct: Math.round((up ? size : -size) * 1000) / 10, text: line });
+    }
+    price = Math.max(Math.round(s.base * 0.1), Math.round(price * (1 + change)));
+    prices.push(price);
+  }
+  return { prices: prices, news: news };
+}
+
+// AI 애널리스트 한마디 (예측이 아니라 최근 흐름 설명)
+function _stockComment(s, prices) {
+  var n = prices.length, now = prices[n - 1];
+  var d1 = n > 24 ? (now - prices[n - 25]) / prices[n - 25] : 0;
+  var w = prices.slice(Math.max(0, n - 168));
+  var hi = Math.max.apply(null, w), lo = Math.min.apply(null, w);
+  var swing = lo > 0 ? (hi - lo) / lo : 0;
+  var msg;
+  if (d1 > 0.08) msg = '하루 사이에 많이 올랐어요. 많이 오른 뒤에는 다시 내려가기도 하니 조심해요.';
+  else if (d1 < -0.08) msg = '하루 사이에 많이 내렸어요. 왜 내렸는지 뉴스를 먼저 살펴봐요.';
+  else if (d1 > 0.02) msg = '조금씩 오르는 중이에요.';
+  else if (d1 < -0.02) msg = '조금씩 내리는 중이에요.';
+  else msg = '큰 변화 없이 잔잔해요.';
+  msg += swing > 0.4 ? ' 이번 주 오르내림이 큰 종목이라 위험도 커요.' : swing > 0.2 ? ' 이번 주 오르내림은 보통이에요.' : ' 이번 주는 비교적 안정적이었어요.';
+  return msg;
+}
+
+function getStockMarket(classCode, studentNo) {
+  try {
+    var cc = cleanText(classCode);
+    var tick = _stockTickNow();
+    var stocks = [], allNews = [];
+    STOCK_LIST.forEach(function (s) {
+      var sim = _stockSimulate(cc, s, tick);
+      var p = sim.prices, n = p.length, now = p[n - 1];
+      var prev = n > 24 ? p[n - 25] : p[0];
+      stocks.push({
+        id: s.id, name: s.name, emoji: s.emoji, sector: s.sector, price: now,
+        change24: prev ? Math.round((now - prev) / prev * 1000) / 10 : 0,
+        history: p.slice(Math.max(0, n - 48)),
+        comment: _stockComment(s, p)
+      });
+      sim.news.slice(-6).forEach(function (e) { allNews.push(e); });
+    });
+    allNews.sort(function (a, b) { return b.tick - a.tick; });
+    var byId = {}; STOCK_LIST.forEach(function (s) { byId[s.id] = s; });
+    var news = allNews.slice(0, 10).map(function (e) {
+      var s = byId[e.stockId];
+      return { when: _stockTickLabel(e.tick), stockId: e.stockId, emoji: s.emoji, name: s.name, up: e.up, pct: e.pct, text: e.text };
+    });
+    var nextMs = STOCK_EPOCH + (tick + 1) * STOCK_TICK_MS - Date.now();
+    var res = { success: true, tick: tick, nextMs: nextMs, stocks: stocks, news: news };
+    if (studentNo !== undefined && studentNo !== null && String(studentNo) !== '') res.holdings = _stockHoldingsOf(cc, String(studentNo), stocks);
+    return res;
+  } catch(e) { return { success: false, msg: e.message }; }
+}
+
+function getOrCreateStockHoldingsSheet(ss) {
+  var sheet = ss.getSheetByName('StockHoldings');
+  if (!sheet) { sheet = ss.insertSheet('StockHoldings'); sheet.appendRow(['학급코드','학생번호','종목ID','보유수량','평균매수가']); }
+  return sheet;
+}
+
+function _stockHoldingsOf(cc, sno, stocks) {
+  var data = getOrCreateStockHoldingsSheet(SpreadsheetApp.getActiveSpreadsheet()).getDataRange().getValues();
+  var priceOf = {}; stocks.forEach(function (s) { priceOf[s.id] = s; });
+  var list = [], total = 0, cost = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (cleanText(data[i][0]) !== cc || cleanText(String(data[i][1])) !== sno) continue;
+    var qty = Number(data[i][3]) || 0; if (qty <= 0) continue;
+    var s = priceOf[String(data[i][2])]; if (!s) continue;
+    var avg = Number(data[i][4]) || 0, value = qty * s.price;
+    total += value; cost += qty * avg;
+    list.push({ stockId: s.id, name: s.name, emoji: s.emoji, qty: qty, avg: avg, price: s.price, value: value,
+                profit: value - qty * avg, pct: avg ? Math.round((s.price - avg) / avg * 1000) / 10 : 0 });
+  }
+  return { list: list, totalValue: total, totalCost: cost, profit: total - cost };
+}
+
+// 학생별 주식 평가액 { 학생번호: 지금 가격 × 보유 수량 } — 총 자산 계산에 씀 (주식이 없으면 빈 객체)
+function _stockValueMap(classCode) {
+  var cc = cleanText(classCode), map = {};
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('StockHoldings');
+  if (!sheet) return map;
+  var data = sheet.getDataRange().getValues(), need = {}, any = false;
+  for (var i = 1; i < data.length; i++) {
+    if (cleanText(data[i][0]) === cc && (Number(data[i][3]) || 0) > 0) { need[String(data[i][2])] = true; any = true; }
+  }
+  if (!any) return map;
+  var tick = _stockTickNow(), price = {};
+  STOCK_LIST.forEach(function (s) { if (need[s.id]) { var p = _stockSimulate(cc, s, tick).prices; price[s.id] = p[p.length - 1]; } });
+  for (var j = 1; j < data.length; j++) {
+    if (cleanText(data[j][0]) !== cc) continue;
+    var qty = Number(data[j][3]) || 0, p2 = price[String(data[j][2])];
+    if (qty <= 0 || !p2) continue;
+    var sno = cleanText(String(data[j][1]));
+    map[sno] = (map[sno] || 0) + qty * p2;
+  }
+  return map;
+}
+
+// 주식 사고팔기 (증권회사 직원이 고객 대신 처리). side: 'buy' | 'sell'
+function tradeStock(classCode, operatorNo, customerNo, stockId, side, quantity) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var cc = cleanText(classCode), sno = cleanText(String(customerNo || ''));
+    var qty = parseInt(quantity);
+    if (!sno) return { success: false, msg: '고객을 선택해 주세요.' };
+    if (isNaN(qty) || qty <= 0) return { success: false, msg: '수량을 1주 이상 입력해 주세요.' };
+    if (qty > 1000) return { success: false, msg: '한 번에 1000주까지 거래할 수 있어요.' };
+    if (side !== 'buy' && side !== 'sell') return { success: false, msg: '사기/팔기를 골라 주세요.' };
+    var s = null; STOCK_LIST.forEach(function (x) { if (x.id === stockId) s = x; });
+    if (!s) return { success: false, msg: '종목을 찾을 수 없습니다.' };
+
+    var sim = _stockSimulate(cc, s, _stockTickNow());
+    var price = sim.prices[sim.prices.length - 1];
+    var total = price * qty;
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var stuSheet = getOrCreateStudentsSheet(ss), tSheet = getOrCreateTransSheet(ss), hSheet = getOrCreateStockHoldingsSheet(ss);
+    var stuData = stuSheet.getDataRange().getValues();
+    var rowIdx = -1, card = 0, name = '';
+    for (var i = 1; i < stuData.length; i++) {
+      if (cleanText(stuData[i][0]) === cc && cleanText(String(stuData[i][1])) === sno) { rowIdx = i + 1; card = Number(stuData[i][4]) || 0; name = stuData[i][2] || ''; break; }
+    }
+    if (rowIdx === -1) return { success: false, msg: '고객 정보를 찾을 수 없습니다.' };
+
+    var hData = hSheet.getDataRange().getValues(), hRow = -1, have = 0, avg = 0;
+    for (var j = 1; j < hData.length; j++) {
+      if (cleanText(hData[j][0]) === cc && cleanText(String(hData[j][1])) === sno && String(hData[j][2]) === s.id) { hRow = j + 1; have = Number(hData[j][3]) || 0; avg = Number(hData[j][4]) || 0; break; }
+    }
+
+    var newCard, memo, today = getTodayStr();
+    if (side === 'buy') {
+      if (card < total) return { success: false, msg: (name || sno + '번') + ' 카드 잔액이 부족해요. (필요: ' + total.toLocaleString() + ' 머니, 보유: ' + card.toLocaleString() + ' 머니)' };
+      newCard = card - total;
+      var newQty = have + qty, newAvg = Math.round((have * avg + total) / newQty);
+      if (hRow === -1) hSheet.appendRow([cc, sno, s.id, newQty, newAvg]);
+      else { hSheet.getRange(hRow, 4).setValue(newQty); hSheet.getRange(hRow, 5).setValue(newAvg); }
+      memo = '[주식] ' + s.emoji + ' ' + s.name + ' ' + qty + '주 매수 (1주 ' + price.toLocaleString() + ')';
+      stuSheet.getRange(rowIdx, 5).setValue(newCard);
+      tSheet.appendRow([today, cc, sno, memo, '', total, newCard, '주식매수']);
+    } else {
+      if (have < qty) return { success: false, msg: (name || sno + '번') + '은(는) ' + s.name + ' 주식을 ' + have + '주만 가지고 있어요.' };
+      newCard = card + total;
+      var left = have - qty;
+      hSheet.getRange(hRow, 4).setValue(left);
+      if (left === 0) hSheet.getRange(hRow, 5).setValue(0);
+      var gain = (price - avg) * qty;
+      memo = '[주식] ' + s.emoji + ' ' + s.name + ' ' + qty + '주 매도 (1주 ' + price.toLocaleString() + ', ' + (gain >= 0 ? '이익 +' : '손해 ') + gain.toLocaleString() + ')';
+      stuSheet.getRange(rowIdx, 5).setValue(newCard);
+      tSheet.appendRow([today, cc, sno, memo, total, '', newCard, '주식매도']);
+    }
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    SpreadsheetApp.flush();
+    return { success: true, price: price, total: total, newCard: newCard,
+             msg: (name || sno + '번') + ' 고객: ' + s.emoji + ' ' + s.name + ' ' + qty + '주 ' + (side === 'buy' ? '매수' : '매도') + ' 완료! (' + total.toLocaleString() + ' 머니)' };
+  } catch(e) {
+    if (String(e.message).match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
+    return { success: false, msg: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ==========================================
 // [통계] 전체 자산 현황
 // ==========================================
 function getClassStats(classCode) {
@@ -1474,16 +1696,18 @@ function getClassStats(classCode) {
     var data = stuSheet.getDataRange().getValues();
     var cc = cleanText(classCode);
     var students = [];
-    var totalCard=0, totalBank=0;
+    var totalCard=0, totalBank=0, totalStock=0;
+    var stockMap = _stockValueMap(cc);   // 주식 평가액 (총 자산에 포함)
     for (var i=1; i<data.length; i++) {
       if (cleanText(data[i][0])===cc) {
         var card=Number(data[i][4])||0, bank=Number(data[i][5])||0, credit=Number(data[i][6])||0;
-        students.push({ no: String(data[i][1]), name: data[i][2]||'', job: data[i][3]||'', card: card, bank: bank, credit: credit, total: card+bank });
-        totalCard += card; totalBank += bank;
+        var stock = stockMap[cleanText(String(data[i][1]))] || 0;
+        students.push({ no: String(data[i][1]), name: data[i][2]||'', job: data[i][3]||'', card: card, bank: bank, stock: stock, credit: credit, total: card+bank+stock });
+        totalCard += card; totalBank += bank; totalStock += stock;
       }
     }
     students.sort(function(a,b){ return b.total - a.total; });
-    return { success: true, students: students, totalCard: totalCard, totalBank: totalBank, count: students.length };
+    return { success: true, students: students, totalCard: totalCard, totalBank: totalBank, totalStock: totalStock, count: students.length };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
