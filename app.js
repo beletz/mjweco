@@ -3052,7 +3052,7 @@ function salMotion(targets, dy){
 }
 
 function salaryTab(mode, el) {
-  ['table','quick','smart'].forEach(function(m){
+  ['table','quick','smart','currency'].forEach(function(m){
     var t=$('slt-'+m);
     if(t){ t.style.background='transparent'; t.style.color='#64748B'; t.style.boxShadow='none'; }
     var p=$('sal-panel-'+m);
@@ -3146,6 +3146,27 @@ function getEffectiveCols(){
 
 var _payrollList = [];   // 스마트 월급 표에 그려진 학생 순서
 
+// ── 소득세 자동 계산: 기본금의 10%, 기본금이 5,000 이상이면 20% (소수점은 버림) ──
+var INCOME_TAX_HIGH_BASE = 5000;
+function isIncomeTaxCol(col){
+  return !!col && col.type==='deduct' && (col.id==='tax' || String(col.name||'').indexOf('소득세')!==-1);
+}
+function incomeTaxFor(base){
+  base=Number(base)||0;
+  if(base<=0) return 0;
+  return Math.floor(base*(base>=INCOME_TAX_HIGH_BASE?0.2:0.1));
+}
+// 기본금을 바꾸면 그 학생의 소득세를 다시 계산한 뒤 실수령액을 고침 (소득세 칸은 손으로 고쳐 쓸 수도 있음)
+function onBaseChange(idx){
+  var base=parseInt(($('sp-base-'+idx)||{}).value)||0;
+  getEffectiveCols().forEach(function(col,cidx){
+    if(!isIncomeTaxCol(col)) return;
+    var el=$('sp-col-'+idx+'-'+cidx);
+    if(el) el.value=incomeTaxFor(base);
+  });
+  updateNetPay(idx);
+}
+
 function initSmartPayroll(){
   var c=$('smart-payroll-table');
   if(!_stuList.length){
@@ -3183,7 +3204,8 @@ function renderSmartPayrollTable(){
   cols.forEach(function(col){
     var cc=col.type==='deduct'?'#EF4444':'#10B981';
     var sign=col.type==='deduct'?'(-)':'(+)';
-    h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:'+cc+';border-bottom:2px solid #E2E8F0;white-space:nowrap;min-width:150px;">'+esc(col.name)+' '+sign+'</th>';
+    var hint=isIncomeTaxCol(col)?'<div style="font-size:12px;color:#94A3B8;margin-top:3px;">기본금의 10% · '+INCOME_TAX_HIGH_BASE.toLocaleString()+' 머니 이상은 20%</div>':'';
+    h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:'+cc+';border-bottom:2px solid #E2E8F0;white-space:nowrap;min-width:150px;">'+esc(col.name)+' '+sign+hint+'</th>';
   });
   h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:#10B981;border-bottom:2px solid #E2E8F0;white-space:nowrap;background:#F0FDF4;min-width:130px;">실수령액</th>';
   h+='</tr>';
@@ -3233,11 +3255,11 @@ function renderSmartPayrollTable(){
     h+='  <div style="font-size:13px;color:#94A3B8;">'+s.studentNo+'번</div>';
     h+='</td>';
     h+='<td style="padding:14px 18px;text-align:center;">';
-    h+='  <input type="number" id="sp-base-'+idx+'" value="'+base+'" min="0" onchange="updateNetPay('+idx+')"';
+    h+='  <input type="number" id="sp-base-'+idx+'" value="'+base+'" min="0" onchange="onBaseChange('+idx+')"';
     h+='    style="width:90px;padding:9px 10px;border:2px solid #BFDBFE;border-radius:10px;font-size:16px;font-weight:700;text-align:center;color:#3B82F6;font-family:Pretendard,sans-serif;outline:none;">';
     h+='</td>';
     cols.forEach(function(col,cidx){
-      var cv=col.valueType==='rate'?Math.floor(base*(col.rate/100)):(col.amount||0);
+      var cv=isIncomeTaxCol(col)?incomeTaxFor(base):(col.valueType==='rate'?Math.floor(base*(col.rate/100)):(col.amount||0));
       if(col.type==='deduct') netCalc-=cv; else netCalc+=cv;
       var bc=col.type==='deduct'?'#FECACA':'#A7F3D0';
       var tc=col.type==='deduct'?'#EF4444':'#10B981';
@@ -3290,7 +3312,7 @@ function bulkFillBase(){
   var val=parseInt(($('bulk-base')||{}).value)||0;
   _payrollList.forEach(function(s,idx){
     var el=$('sp-base-'+idx);
-    if(el){ el.value=val; updateNetPay(idx); }
+    if(el){ el.value=val; onBaseChange(idx); }
   });
   showToast('✅ 기본금 '+val.toLocaleString()+' 머니 일괄 입력 완료');
 }
@@ -3304,7 +3326,7 @@ function applyHobongTable(){
   _payrollList.forEach(function(s,idx){
     var salary=_salaryTable[s.job||'국민']||_salaryTable['국민']||0;
     var el=$('sp-base-'+idx);
-    if(el){ el.value=salary; updateNetPay(idx); }
+    if(el){ el.value=salary; onBaseChange(idx); }
   });
   showToast('✅ 호봉표 기준으로 직업별 기본금이 적용되었습니다.');
 }

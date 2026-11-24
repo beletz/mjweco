@@ -3306,6 +3306,51 @@ function setSiteName(adminPassword, newName) {
 }
 
 // ==========================================
+// [화폐] 학급마다 화폐 이름을 정함 (기본: 머니)
+// CurrencySettings: [0]학급코드 [1]화폐이름
+// ==========================================
+var DEFAULT_CURRENCY = '머니';
+
+function getCurrencyName(classCode) {
+  try {
+    var cc = cleanText(classCode);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CurrencySettings');
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (cleanText(data[i][0]) === cc) {
+          var n = String(data[i][1] || '').trim();
+          return { success: true, name: n || DEFAULT_CURRENCY };
+        }
+      }
+    }
+    return { success: true, name: DEFAULT_CURRENCY };
+  } catch(e) { return { success: false, msg: e.message }; }
+}
+
+function setCurrencyName(classCode, newName) {
+  try {
+    var cc = cleanText(classCode);
+    var name = String(newName || '').replace(/[<>"'&]/g, '').trim();
+    if (!cc) return { success: false, msg: "학급 코드가 없습니다. 다시 로그인해 주세요." };
+    if (!name) return { success: false, msg: "새 화폐 이름을 입력해 주세요." };
+    if (name.length > 10) return { success: false, msg: "화폐 이름은 10자 이내로 입력해 주세요." };
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('CurrencySettings');
+    if (!sheet) { sheet = ss.insertSheet('CurrencySettings'); sheet.appendRow(['학급코드','화폐이름']); }
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) === cc) {
+        sheet.getRange(i + 1, 2).setValue(name);
+        return { success: true, name: name, msg: "화폐 이름이 '" + name + "'(으)로 바뀌었습니다!" };
+      }
+    }
+    sheet.appendRow([cc, name]);
+    return { success: true, name: name, msg: "화폐 이름이 '" + name + "'(으)로 바뀌었습니다!" };
+  } catch(e) { return { success: false, msg: "오류: " + e.message }; }
+}
+
+// ==========================================
 // [아바타] 나의 아바타 꾸미기
 // Avatars:      [0]학급코드 [1]학생번호 [2]착용(JSON) [3]보유(JSON 배열)
 // AvatarPrices: [0]학급코드 [1]아이템ID [2]가격 [3]판매(Y/N)   ← 선생님이 바꾼 가격만 저장

@@ -326,6 +326,10 @@
       style="padding:11px 22px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:all 0.2s;white-space:nowrap;color:#64748B;">
       🤖 스마트 월급 지급
     </div>
+    <div id="slt-currency" onclick="salaryTab('currency',this)"
+      style="padding:11px 22px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:all 0.2s;white-space:nowrap;color:#64748B;">
+      🪙 화폐 이름
+    </div>
   </div>
 
   <!-- ===== 패널 1: 직업 기본 급여표 ===== -->
@@ -442,6 +446,25 @@
           스마트 월급 탭을 열면 자동으로 로드됩니다.
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== 패널 4: 화폐 이름 ===== -->
+  <div id="sal-panel-currency" style="display:none;">
+    <div style="background:white;border:1.5px solid #E2E8F0;border-radius:14px;padding:18px 20px;max-width:520px;">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px;">
+        <div style="font-family:'Jua',sans-serif;font-size:20px;color:#1E293B;">🪙 화폐 이름</div>
+        <div style="font-size:14px;color:#64748B;">지금: <b id="cur-now" class="cur-keep" style="font-size:18px;color:#F59E0B;">머니</b></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="cur-new" maxlength="10" placeholder="새 이름 (예: 별, 콩)" onkeydown="if(event.key==='Enter')saveCurrencyName()"
+          style="flex:1;min-width:0;padding:9px 12px;border:2px solid #E2E8F0;border-radius:10px;font-size:15px;font-family:inherit;outline:none;">
+        <button onclick="saveCurrencyName()"
+          style="background:#10B981;color:white;border:none;padding:9px 18px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">
+          저장
+        </button>
+      </div>
+      <div class="cur-keep" style="font-size:12px;color:#94A3B8;margin-top:8px;">바꾸면 홈페이지의 '머니'가 모두 새 이름으로 바뀌어요 (학생 화면 포함)</div>
     </div>
   </div>
 
@@ -1651,6 +1674,7 @@
 <script src="app.js"></script>
 <script src="avatar.js"></script>
 <script src="site-name.js"></script>
+<script src="currency.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
 <script src="ui-motion.js"></script>
 <script src="ui-colors.js"></script>
