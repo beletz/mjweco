@@ -396,6 +396,11 @@
   }
   function stopStockTimer() { if (stockTimer) { clearInterval(stockTimer); stockTimer = null; } }
 
+  window.wtShowChart = function (id) {
+    var s = null; ((market && market.stocks) || []).forEach(function (x) { if (x.id === id) s = x; });
+    if (s && typeof window.stkOpenChart === 'function') window.stkOpenChart(s);
+  };
+
   function spark(arr, up) {
     if (typeof window.stkSparkline === 'function') return window.stkSparkline(arr, up);
     return '';
@@ -420,16 +425,18 @@
     var h = '';
     market.stocks.forEach(function (s) {
       var up = s.change >= 0, moved = prev[s.id] != null && prev[s.id] !== s.price;
-      h += '<div class="stk-card' + (moved ? ' wt-flash' : '') + '">';
+      h += '<div class="stk-card' + (moved ? ' wt-flash' : '') + '" title="누르면 전체 그래프가 보여요" onclick="wtShowChart(\'' + s.id + '\')">';
       h += '<div class="stk-card-top"><span class="stk-emoji">' + s.emoji + '</span><div><div class="stk-name">' + E(s.name) + '</div><div class="stk-sector">' + E(s.sector) + '</div></div></div>';
       h += '<div class="stk-price">' + won(s.price) + '</div>';
       h += '<div class="stk-chg ' + (s.change > 0 ? 'up' : s.change < 0 ? 'down' : 'flat') + '">' + (s.change > 0 ? '▲ ' : s.change < 0 ? '▼ ' : '– ') + Math.abs(s.change) + '% <span>지난 변동</span></div>';
-      h += spark(s.history, up);
+      h += '<div class="stk-graph"><div class="stk-graph-top"><span>최근 7일</span><span class="stk-graph-more">🔍 전체 그래프</span></div>' +
+        (typeof window.stkChart === 'function' ? window.stkChart(s.history, s.historyAt) : spark(s.history, up)) + '</div>';
       h += '<div class="stk-ai">🤖 ' + E(s.comment) + '</div>';
       h += '</div>';
     });
     var box = $('wt-stk-cards');
     box.innerHTML = h;
+    if (typeof window.stkFitLabels === 'function') window.stkFitLabels(box);
     if (animate && window.anime && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
       anime({ targets: box.querySelectorAll('.stk-card'), opacity: [0, 1], translateY: [14, 0], delay: anime.stagger(70), duration: 480, easing: 'cubicBezier(.2,.7,.2,1)',
         complete: function () { box.querySelectorAll('.stk-card').forEach(function (c) { c.style.opacity = ''; c.style.transform = ''; }); } });

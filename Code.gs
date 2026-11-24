@@ -1478,7 +1478,7 @@ function buyLottery(classCode, studentNo, amount) {
 // StockMarket:   [0]학급코드 [1]시장 상태(JSON)
 // StockHoldings: [0]학급코드 [1]학생번호 [2]종목ID [3]보유수량 [4]평균매수가
 // ==========================================
-var STOCK_HISTORY_MAX = 30;          // 그래프에 남길 가격 개수
+var STOCK_HISTORY_MAX = 150;         // 그래프에 남길 가격 개수 (전체 그래프용. 카드에는 최근 7일만 보임)
 var STOCK_AUTO_HOUR = 8, STOCK_AUTO_MIN = 45;
 var STOCK_DEFAULTS = [
   { id: 'cookie', name: '달콤쿠키',     emoji: '🍪', sector: '과자·식품', price: 1000 },
@@ -1513,7 +1513,7 @@ function _stockDefaultState() {
   return {
     round: 0, auto: false, nextAutoAt: 0, lastRunAt: 0, lastRunBy: '',
     stocks: STOCK_DEFAULTS.map(function (d) {
-      return { id: d.id, name: d.name, emoji: d.emoji, sector: d.sector, price: d.price, minPct: -3, maxPct: 3, history: [d.price], lastPct: 0 };
+      return { id: d.id, name: d.name, emoji: d.emoji, sector: d.sector, price: d.price, minPct: -3, maxPct: 3, history: [d.price], historyAt: [Date.now()], lastPct: 0 };
     }),
     news: []
   };
@@ -1532,24 +1532,44 @@ function _stockSave(cc, state) {
   sheet.appendRow([cc, json]);
 }
 
+// 고정 % (없으면 null). 고정 해제하면 다시 무작위로 바뀜
+function _stockFixedOf(s) {
+  if (s.fixedPct === null || s.fixedPct === undefined || s.fixedPct === '') return null;
+  var f = Number(s.fixedPct);
+  return isNaN(f) ? null : f;
+}
+
+// 가격 기록마다 바뀐 시각 (예전에 날짜 없이 저장된 가격은 null로 채워 길이를 맞춤)
+function _stockTimesOf(s) {
+  var n = (s.history || []).length, t = Array.isArray(s.historyAt) ? s.historyAt.slice(-n) : [];
+  while (t.length < n) t.unshift(null);
+  return t;
+}
+
 // 한 번 돌리기 (가격 변동)
-function _stockStep(state, by) {
+// atMs: 바뀐 시각 (자동으로 밀린 만큼 돌릴 때는 원래 예정 시각). 가격마다 날짜를 historyAt에 함께 남김
+function _stockStep(state, by, atMs) {
+  var at = atMs || Date.now();
   state.stocks.forEach(function (s) {
     var lo = Number(s.minPct), hi = Number(s.maxPct);
     if (isNaN(lo)) lo = -3; if (isNaN(hi)) hi = 3; if (hi < lo) { var t = lo; lo = hi; hi = t; }
-    var pct = Math.round((lo + Math.random() * (hi - lo)) * 10) / 10;
+    // 선생님이 % 고정을 켜 두면 그 값으로, 아니면 [최소, 최대] 사이 무작위
+    var fixed = _stockFixedOf(s);
+    var pct = fixed !== null ? fixed : Math.round((lo + Math.random() * (hi - lo)) * 10) / 10;
     s.price = Math.max(10, Math.round(s.price * (1 + pct / 100)));
     s.lastPct = pct;
-    s.history = (s.history || []).concat([s.price]).slice(-STOCK_HISTORY_MAX);
+    var hist = s.history || [], times = _stockTimesOf(s);
+    s.history = hist.concat([s.price]).slice(-STOCK_HISTORY_MAX);
+    s.historyAt = times.concat([at]).slice(-STOCK_HISTORY_MAX);
     var big = Math.max(Math.abs(lo), Math.abs(hi)) * 0.6;            // 범위의 60% 넘게 움직이면 뉴스
     if (big > 0 && Math.abs(pct) >= big) {
       var pool = pct > 0 ? STOCK_NEWS_GOOD : STOCK_NEWS_BAD;
-      state.news.unshift({ at: Date.now(), stockId: s.id, up: pct > 0, pct: pct, text: pool[Math.floor(Math.random() * pool.length)].replace('{n}', s.name) });
+      state.news.unshift({ at: at, stockId: s.id, up: pct > 0, pct: pct, text: pool[Math.floor(Math.random() * pool.length)].replace('{n}', s.name) });
     }
   });
   state.news = state.news.slice(0, 15);
   state.round = (state.round || 0) + 1;
-  state.lastRunAt = Date.now();
+  state.lastRunAt = at;
   state.lastRunBy = by || '';
 }
 
@@ -1566,7 +1586,7 @@ function _stockLoad(classCode) {
   var ran = 0;
   if (state.auto && state.nextAutoAt) {
     while (Date.now() >= state.nextAutoAt && ran < 20) {   // 오래 안 열었으면 밀린 평일 수만큼 (최대 20번)
-      _stockStep(state, '자동');
+      _stockStep(state, '자동', state.nextAutoAt);
       state.lastRunAt = state.nextAutoAt;
       state.nextAutoAt = _stockNextAutoAt(state.nextAutoAt);
       ran++;
@@ -1596,7 +1616,7 @@ function _stockComment(s) {
 function _stockPublic(state) {
   return state.stocks.map(function (s) {
     return { id: s.id, name: s.name, emoji: s.emoji, sector: s.sector, price: s.price, change: s.lastPct || 0,
-             history: s.history || [s.price], minPct: s.minPct, maxPct: s.maxPct, comment: _stockComment(s) };
+             history: s.history || [s.price], historyAt: _stockTimesOf(s), minPct: s.minPct, maxPct: s.maxPct, fixedPct: _stockFixedOf(s), comment: _stockComment(s) };
   });
 }
 
@@ -1671,6 +1691,15 @@ function setStockSettings(classCode, settingsJson) {
       s.emoji = String(x.emoji || s.emoji).trim().slice(0, 4) || s.emoji;
       s.sector = String(x.sector || '').trim().slice(0, 20);
       s.minPct = Math.round(lo * 10) / 10; s.maxPct = Math.round(hi * 10) / 10;
+      // 고정 %: 비어 있으면(null/'') 고정 해제 → 무작위
+      if (!('fixedPct' in x)) { /* 고정 칸을 보내지 않은 예전 화면 → 그대로 둠 */ }
+      else if (x.fixedPct === null || String(x.fixedPct).trim() === '') s.fixedPct = null;
+      else {
+        var fx = Number(x.fixedPct);
+        if (isNaN(fx)) return { success: false, msg: name + ': 고정 %를 숫자로 적어 주세요.' };
+        if (fx < -30 || fx > 30) return { success: false, msg: name + ': 고정 %는 -30% ~ +30% 사이로 적어 주세요.' };
+        s.fixedPct = Math.round(fx * 10) / 10;
+      }
     }
     _stockSave(cc, state);
     return { success: true, msg: '증권회사 종목 설정을 저장했어요!' };
