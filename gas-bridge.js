@@ -513,16 +513,21 @@
           }
           callServer(prop, args).then(function (res) {
             console.info('[서버 함수 ' + prop + '] 완료 (' + (Date.now() - t0) + 'ms)');
+            // 지급·삭제 같은 "바꾸는" 일이면 결과 알림창을 준비 (result-popup.js)
+            var hook = window.ssmResultHook ? window.ssmResultHook.begin(prop, args, res, false) : null;
             // 화면 쪽 처리에서 오류가 나도 조용히 묻히지 않게
             try { if (onOk) onOk(res, userObj); }
             catch (x) { showFatal('결과를 화면에 표시하다가 오류가 났습니다.', x); }
+            if (hook) window.ssmResultHook.end(hook);
           }, function (e) {
             var err = friendlyError(e);
             console.error('[서버 함수 ' + prop + ' 오류] (' + (Date.now() - t0) + 'ms)', e);
+            var hook = window.ssmResultHook ? window.ssmResultHook.begin(prop, args, null, true, err) : null;
             try {
               if (onFail) onFail(err, userObj);
               else showFatal('오류', err);
             } catch (x) { showFatal('오류 안내를 표시하다가 또 오류가 났습니다.', x); }
+            if (hook) window.ssmResultHook.end(hook);
           }).catch(function (x) { showFatal('알 수 없는 오류가 났습니다.', x); });
         };
       }

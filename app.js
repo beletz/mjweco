@@ -3146,15 +3146,17 @@ function getEffectiveCols(){
 
 var _payrollList = [];   // 스마트 월급 표에 그려진 학생 순서
 
-// ── 소득세 자동 계산: 기본금의 10%, 기본금이 5,000 이상이면 20% (소수점은 버림) ──
-var INCOME_TAX_HIGH_BASE = 5000;
+// ── 소득세 자동 계산: 기본금의 10%. 단, 학생의 총 자산(카드 + 은행 예금)이 5,000 이상이면 20% (소수점은 버림) ──
+var INCOME_TAX_RICH_LINE = 5000;
 function isIncomeTaxCol(col){
   return !!col && col.type==='deduct' && (col.id==='tax' || String(col.name||'').indexOf('소득세')!==-1);
 }
-function incomeTaxFor(base){
+function totalAssetsOf(s){ return s ? (Number(s.card)||0)+(Number(s.bank)||0) : 0; }
+function incomeTaxRate(s){ return totalAssetsOf(s)>=INCOME_TAX_RICH_LINE ? 0.2 : 0.1; }
+function incomeTaxFor(base, s){
   base=Number(base)||0;
   if(base<=0) return 0;
-  return Math.floor(base*(base>=INCOME_TAX_HIGH_BASE?0.2:0.1));
+  return Math.floor(base*incomeTaxRate(s));
 }
 // 기본금을 바꾸면 그 학생의 소득세를 다시 계산한 뒤 실수령액을 고침 (소득세 칸은 손으로 고쳐 쓸 수도 있음)
 function onBaseChange(idx){
@@ -3162,22 +3164,26 @@ function onBaseChange(idx){
   getEffectiveCols().forEach(function(col,cidx){
     if(!isIncomeTaxCol(col)) return;
     var el=$('sp-col-'+idx+'-'+cidx);
-    if(el) el.value=incomeTaxFor(base);
+    if(el) el.value=incomeTaxFor(base, _payrollList[idx]);
   });
   updateNetPay(idx);
 }
 
 function initSmartPayroll(){
   var c=$('smart-payroll-table');
-  if(!_stuList.length){
-    // 명단이 아직 없으면 직접 불러온 뒤 다시 그림
-    if(c) c.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;">학생 명단을 불러오는 중...</div>';
-    google.script.run.withSuccessHandler(function(r){
-      if(r && r.success && r.list.length){ _stuList=r.list; initSmartPayroll(); }
-      else if(c) c.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;">등록된 학생이 없습니다. 국민 관리에서 학생을 먼저 추가해 주세요.</div>';
-    }).getStudentList(_adminCC);
-    return;
-  }
+  // 소득세율이 총 자산(카드+은행)에 따라 달라지므로, 열 때마다 최신 잔액으로 명단을 새로 받아 옴
+  if(c && !_stuList.length) c.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;">학생 명단을 불러오는 중...</div>';
+  google.script.run.withSuccessHandler(function(r){
+    if(r && r.success) _stuList=r.list;
+    if(!_stuList.length){
+      if(c) c.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;">등록된 학생이 없습니다. 국민 관리에서 학생을 먼저 추가해 주세요.</div>';
+      return;
+    }
+    initSmartPayrollDraw();
+  }).withFailureHandler(function(){ if(_stuList.length) initSmartPayrollDraw(); }).getStudentList(_adminCC);
+}
+
+function initSmartPayrollDraw(){
   if(Object.keys(_salaryTable).length===0){
     google.script.run
       .withSuccessHandler(function(r){
@@ -3204,7 +3210,7 @@ function renderSmartPayrollTable(){
   cols.forEach(function(col){
     var cc=col.type==='deduct'?'#EF4444':'#10B981';
     var sign=col.type==='deduct'?'(-)':'(+)';
-    var hint=isIncomeTaxCol(col)?'<div style="font-size:12px;color:#94A3B8;margin-top:3px;">기본금의 10% · '+INCOME_TAX_HIGH_BASE.toLocaleString()+' 머니 이상은 20%</div>':'';
+    var hint=isIncomeTaxCol(col)?'<div style="font-size:12px;color:#94A3B8;margin-top:3px;">기본금의 10% · 총 자산 '+INCOME_TAX_RICH_LINE.toLocaleString()+' 머니 이상은 20%</div>':'';
     h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:'+cc+';border-bottom:2px solid #E2E8F0;white-space:nowrap;min-width:150px;">'+esc(col.name)+' '+sign+hint+'</th>';
   });
   h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:#10B981;border-bottom:2px solid #E2E8F0;white-space:nowrap;background:#F0FDF4;min-width:130px;">실수령액</th>';
@@ -3252,14 +3258,14 @@ function renderSmartPayrollTable(){
     h+='</td>';
     h+='<td style="padding:14px 18px;">';
     h+='  <div style="font-size:17px;font-weight:700;color:#1E293B;">'+esc(s.name||'')+'</div>';
-    h+='  <div style="font-size:13px;color:#94A3B8;">'+s.studentNo+'번</div>';
+    h+='  <div style="font-size:13px;color:#94A3B8;">'+s.studentNo+'번 · 총 자산 '+totalAssetsOf(s).toLocaleString()+(incomeTaxRate(s)>0.1?' <span style="background:#FFE4E6;color:#E11D48;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;">소득세 20%</span>':'')+'</div>';
     h+='</td>';
     h+='<td style="padding:14px 18px;text-align:center;">';
     h+='  <input type="number" id="sp-base-'+idx+'" value="'+base+'" min="0" onchange="onBaseChange('+idx+')"';
     h+='    style="width:90px;padding:9px 10px;border:2px solid #BFDBFE;border-radius:10px;font-size:16px;font-weight:700;text-align:center;color:#3B82F6;font-family:Pretendard,sans-serif;outline:none;">';
     h+='</td>';
     cols.forEach(function(col,cidx){
-      var cv=isIncomeTaxCol(col)?incomeTaxFor(base):(col.valueType==='rate'?Math.floor(base*(col.rate/100)):(col.amount||0));
+      var cv=isIncomeTaxCol(col)?incomeTaxFor(base,s):(col.valueType==='rate'?Math.floor(base*(col.rate/100)):(col.amount||0));
       if(col.type==='deduct') netCalc-=cv; else netCalc+=cv;
       var bc=col.type==='deduct'?'#FECACA':'#A7F3D0';
       var tc=col.type==='deduct'?'#EF4444':'#10B981';
