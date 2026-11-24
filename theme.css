@@ -852,3 +852,15 @@ h1,h2,h3,.brand,.st,.dash-tile h3{ letter-spacing:-.01em; }
 .stkm-stats b{display:block;font-size:19px;color:#1E293B}
 .stkm-stats b.up{color:#E11D48 !important}.stkm-stats b.down{color:#2563EB !important}.stkm-stats b.flat{color:#64748B !important}
 .stkm-tip{margin-top:10px;font-size:13.5px;color:#2A3B66;background:var(--t-blue);border-radius:12px;padding:9px 12px;line-height:1.55}
+
+/* ==========================================================================
+   결재 대기 빨간 숫자 — 위쪽 탭 + 홈 타일. 위아래로 통통 (app.js setPendingBadge)
+   translate로 흔들고, 새로 늘어날 때의 '톡'은 anime.js가 transform(scale)로 → 서로 겹치지 않음
+   ========================================================================== */
+.mh-badge{animation:badgeBob 1.6s ease-in-out infinite}
+.tile-badge{position:absolute;top:14px;right:14px;z-index:2;min-width:30px;height:30px;line-height:30px;padding:0 9px;border-radius:999px;
+  background:#EF4444;color:#fff;font-size:16px;text-align:center;box-shadow:0 4px 12px -2px rgba(239,68,68,.55);
+  animation:badgeBob 1.6s ease-in-out infinite}
+.dash-tile:has(.tile-badge[style*="inline-block"]) .tile-dot{display:none}
+@keyframes badgeBob{0%,100%{translate:0 0}50%{translate:0 -5px}}
+@media (prefers-reduced-motion:reduce){.mh-badge,.tile-badge{animation:none}}

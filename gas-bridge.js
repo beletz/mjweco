@@ -34,6 +34,15 @@
     });
     return {
       ready: ready,
+      // 문서가 바뀌면 바로 알려 줌 (실시간). 끄는 함수를 돌려줌
+      watch: function (path, onChange) {
+        var stop = function () {}, stopped = false;
+        ready.then(function () {
+          if (stopped) return;
+          stop = db.doc(path).onSnapshot(function () { onChange(); }, function (e) { console.warn('[실시간 감시 실패] ' + path, e); });
+        });
+        return function () { stopped = true; stop(); };
+      },
       run: function (work) {
         return db.runTransaction(function (t) {
           return work({
@@ -543,6 +552,18 @@
   window.ssmCall = function (name) { return callServer(name, Array.prototype.slice.call(arguments, 1)); };
   window.ssmBackend = backend;
   window.ssmPathOf = pathOf; window.ssmKeyOf = keyOf; window.ssmPackRows = packRows; window.ssmNormCC = normCC;
+
+  // 학급 시트가 바뀌면 바로 cb를 부름 (예: 학생이 통계청 보고 → 선생님 화면 배지 갱신)
+  // 로컬 테스트 모드에는 실시간 기능이 없어 아무것도 하지 않음. 끄는 함수를 돌려줌
+  window.ssmWatchSheets = function (cc, names, cb) {
+    if (!backend.watch) return function () {};
+    var c = normCC(cc), stops = [];
+    (names || []).forEach(function (n) {
+      var key = keyOf(n, c);
+      if (key) stops.push(backend.watch(pathOf(key), cb));
+    });
+    return function () { stops.forEach(function (s) { try { s(); } catch (e) {} }); };
+  };
 
   // 로컬 테스트 모드 안내 띠
   if (!useFirebase) {

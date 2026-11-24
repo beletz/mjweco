@@ -198,7 +198,7 @@ function clickNavMaster(){
 function doLogout(){
   sessionStorage.removeItem('smtm_session');
   try{ localStorage.removeItem('smtm_remember_teacher'); }catch(e){}
-  _adminCC=''; _cc=''; _isTeacher=false;
+  _adminCC=''; _cc=''; _isTeacher=false; if(typeof stopBadgeWatch==='function') stopBadgeWatch();
   document.querySelectorAll('input').forEach(function(i){i.value='';});
   $('nav-login-btn').style.display='inline-flex';
   $('nav-master-btn').style.display='none';
@@ -242,22 +242,53 @@ function mdTab(panelId, tabEl){
 }
 
 // ── 마스터 대시보드 결재 대기 배지 갱신 (국고 승인 / 신용 관리) ──
+// 위쪽 탭 배지(mh-badge-OO)와 홈 타일 배지(tile-badge-OO)를 함께 바꿈. 숫자가 늘면 톡 튀어 오름
+function setPendingBadge(kind, n){
+  ['mh-badge-'+kind, 'tile-badge-'+kind].forEach(function(id){
+    var b=$(id); if(!b) return;
+    var before=parseInt(b.textContent)||0, wasShown=b.style.display!=='none';
+    if(n>0){
+      b.textContent=n; b.style.display='inline-block';
+      if((!wasShown || n>before) && window.anime && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)){
+        anime.remove(b);
+        anime({ targets:b, scale:[0.3,1], duration:650, easing:'easeOutElastic(1, .5)', complete:function(){ b.style.transform=''; } });
+      }
+    } else b.style.display='none';
+  });
+}
+
 function refreshMasterPendingBadges(){
   var targetCC = _adminCC || _cc;
   if(!targetCC) return;
+  startBadgeWatch(targetCC);
   google.script.run
     .withSuccessHandler(function(r){
       if(!r || !r.success) return;
-      var bt=$('mh-badge-treasury');
-      if(bt){ if(r.treasury>0){ bt.textContent=r.treasury; bt.style.display='inline-block'; } else bt.style.display='none'; }
-      var bc=$('mh-badge-credit');
-      if(bc){ if(r.credit>0){ bc.textContent=r.credit; bc.style.display='inline-block'; } else bc.style.display='none'; }
-      var bs=$('mh-badge-stats');
-      if(bs){ if(r.stats>0){ bs.textContent=r.stats; bs.style.display='inline-block'; } else bs.style.display='none'; }
+      setPendingBadge('treasury', r.treasury);
+      setPendingBadge('credit', r.credit);
+      setPendingBadge('stats', r.stats);
     })
     .withFailureHandler(function(){})
     .getMasterPendingBadgeCounts(targetCC);
 }
+
+// ── 선생님 화면이 켜져 있는 동안 배지를 계속 최신으로 ──
+//  1) 실시간: 국고·신용·과제 시트가 바뀌면 바로 (Firebase)
+//  2) 혹시 놓칠 때를 대비해 20초마다, 그리고 창으로 돌아올 때마다 한 번 더 확인
+var _badgeWatchCC='', _badgeWatchStop=null, _badgeTimer=null, _badgeDebounce=null;
+function startBadgeWatch(cc){
+  if(!_isTeacher || !cc || cc===_badgeWatchCC) return;
+  stopBadgeWatch();
+  _badgeWatchCC=cc;
+  var soon=function(){ clearTimeout(_badgeDebounce); _badgeDebounce=setTimeout(refreshMasterPendingBadges, 400); };
+  if(typeof ssmWatchSheets==='function') _badgeWatchStop=ssmWatchSheets(cc, ['Homework','Treasury','CreditPending'], soon);
+  _badgeTimer=setInterval(function(){ if(!document.hidden && _isTeacher) refreshMasterPendingBadges(); }, 20000);
+}
+function stopBadgeWatch(){
+  if(_badgeWatchStop){ try{ _badgeWatchStop(); }catch(e){} }
+  _badgeWatchStop=null; clearInterval(_badgeTimer); _badgeTimer=null; _badgeWatchCC='';
+}
+document.addEventListener('visibilitychange', function(){ if(!document.hidden && _isTeacher && (_adminCC||_cc)) refreshMasterPendingBadges(); });
 
 // ============================================================
 // 학생 명단 관리
@@ -2790,7 +2821,7 @@ function submitHwReport(hwId){
     }
     flushHwSaves(function(){
       google.script.run
-        .withSuccessHandler(function(r){ hideLoading(); showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg); if(r.success) loadStatsOffice(); })
+        .withSuccessHandler(function(r){ hideLoading(); showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg); if(r.success){ loadStatsOffice(); if(_isTeacher) refreshMasterPendingBadges(); } })
         .withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
         .submitHomeworkReport(targetCC, hwId);
     });

@@ -233,10 +233,12 @@
         <h3>세금 관리</h3><p>개별·일괄 세금 부과</p>
       </div>
       <div class="dash-tile" onclick="mdTab('md-credit-admin',document.querySelectorAll('.mh-tab')[5])">
+        <span class="tile-badge" id="tile-badge-credit" style="display:none;" title="신용 보고 결재 대기"></span>
         <div class="tile-dot"></div><div class="tile-icon" style="background:var(--purple);"><i class="fa-solid fa-chart-line"></i></div>
         <h3>신용 관리</h3><p>신용점수 조정</p>
       </div>
       <div class="dash-tile" onclick="mdTab('md-stats',document.querySelectorAll('.mh-tab')[6])">
+        <span class="tile-badge" id="tile-badge-stats" style="display:none;" title="과제 보고 결재 대기"></span>
         <div class="tile-dot"></div><div class="tile-icon" style="background:var(--cyan);"><i class="fa-solid fa-chart-simple"></i></div>
         <h3>통계</h3><p>전체 자산 현황 조사</p>
       </div>
@@ -245,6 +247,7 @@
         <h3>용돈기입장</h3><p>학생별 거래내역 조회·기록</p>
       </div>
       <div class="dash-tile" onclick="mdTab('md-treasury-approval',document.querySelector('.mh-tab[onclick*=&quot;md-treasury-approval&quot;]'))">
+        <span class="tile-badge" id="tile-badge-treasury" style="display:none;" title="국고 승인 대기"></span>
         <div class="tile-dot"></div><div class="tile-icon" style="background:var(--yellow);"><i class="fa-solid fa-landmark"></i></div>
         <h3>국고 승인</h3><p>국고 기록 승인·국고 메뉴</p>
       </div>
