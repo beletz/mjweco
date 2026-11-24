@@ -28,7 +28,7 @@
     recordWholesaleSale: '판매', addWholesaleItemBackend: '상품 등록', deleteWholesaleItem: '상품 삭제',
     deleteWholesaleSale: '판매 기록 삭제', editWholesaleSaleMemo: '메모 수정', payWholesaleCorpTax: '법인세 납부',
     // 부동산·증권·아바타
-    buyRealEstate: '부동산 구매', addRealEstate: '부동산 등록', buyLottery: '구매', tradeStock: '주식 거래', addStockRequest: '신청',
+    buyRealEstate: '부동산 구매', addRealEstate: '부동산 등록', buyLottery: '구매', tradeStock: '주식 거래', runStockStep: '가격 돌리기', setStockAuto: '자동으로 돌리기 설정', setStockSettings: '종목 설정 저장', addStockRequest: '신청',
     buyAvatarItem: '아이템 구매', saveAvatar: '아바타 저장', setAvatarPrices: '가격 저장',
     // 숙제
     addHomework: '숙제 등록', deleteHomework: '숙제 삭제', submitHomeworkReport: '숙제 보고',

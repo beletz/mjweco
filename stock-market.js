@@ -1,6 +1,7 @@
 // ==========================================================================
 // 증권회사 — AI 모의 투자 화면
 // 가격·뉴스는 서버(Code.gs getStockMarket)의 "AI 시장 엔진"이 정합니다. 이 파일은 보여 주기와 사고팔기만 합니다.
+// 가격은 선생님이 "직접 돌리기"를 누르거나, "자동으로 돌리기"를 켜 두면 평일 오전 8:45에 바뀝니다.
 // 증권회사 직원(또는 선생님)이 고객을 골라 대신 사고팝니다. 한국 주식 화면처럼 오르면 빨강, 내리면 파랑.
 // ==========================================================================
 (function () {
@@ -9,7 +10,6 @@
   var won = function (n) { return (Number(n) || 0).toLocaleString() + ' 머니'; };
   var market = null;       // 마지막으로 받은 시장 정보
   var timer = null;
-  var nextAt = 0;          // 다음 가격 변동 시각 (내 컴퓨터 시계 기준)
   var cc = function () { return (typeof _cc !== 'undefined' && _cc) || (typeof _adminCC !== 'undefined' && _adminCC) || ''; };
 
   window.stockTab = function (panelId, el) {
@@ -25,7 +25,7 @@
     stkFillCustomers();
     stkRefresh(true);
     if (timer) clearInterval(timer);
-    timer = setInterval(stkTickClock, 1000);
+    timer = setInterval(stkTickClock, 30000);
   };
 
   function stkFillCustomers() {
@@ -53,7 +53,7 @@
       if (!r || !r.success) { if ($('stk-cards')) $('stk-cards').innerHTML = '<div class="empty-msg">시장 정보를 불러오지 못했어요.</div>'; return; }
       var first = !market;
       market = r;
-      nextAt = Date.now() + (r.nextMs || 0);
+      renderStatus();
       renderCards(first);
       renderNews();
       renderStockSelect();
@@ -64,14 +64,47 @@
     }).getStockMarket(cc(), who);
   };
 
+  // 화면을 켜 둔 채 자동 변동 시각(평일 8:45)이 지나면 새 가격 받기
   function stkTickClock() {
     var view = $('view-stock');
-    if (!view || !view.classList.contains('active')) return; // 다른 화면에 있으면 쉬기
-    var left = Math.max(0, nextAt - Date.now());
-    var m = Math.floor(left / 60000), s = Math.floor(left % 60000 / 1000);
-    if ($('stk-next')) $('stk-next').textContent = m + '분 ' + (s < 10 ? '0' : '') + s + '초';
-    if (nextAt && left === 0) { nextAt = Date.now() + 5000; stkRefresh(false); } // 시간이 되면 새 가격 받기
+    if (!view || !view.classList.contains('active') || !market) return; // 다른 화면에 있으면 쉬기
+    if (market.auto && market.nextAutoAt && Date.now() >= market.nextAutoAt) stkRefresh(false);
   }
+
+  // 위쪽 안내(다음 변동 시각)와 선생님용 버튼
+  function renderStatus() {
+    if (!market) return;
+    var box = $('stk-next');
+    if (box) box.innerHTML = market.auto
+      ? '⏰ 다음 자동 변동 <b>' + esc(market.nextAutoLabel) + '</b>'
+      : '✋ 자동 변동 꺼짐 <span style="color:#94A3B8;">· 선생님이 직접 돌려요</span>';
+    var ctrl = $('stk-ctrl');
+    if (ctrl) ctrl.style.display = (typeof _isTeacher !== 'undefined' && _isTeacher) ? 'flex' : 'none';
+    var chk = $('stk-auto'); if (chk) chk.checked = !!market.auto;
+  }
+
+  // 직접 돌리기 (선생님)
+  window.stkRunStep = function () {
+    if (!confirm('주식 가격을 지금 한 번 바꿀까요?\n종목마다 정해 둔 변동 폭 안에서 무작위로 오르거나 내려요.')) return;
+    if (typeof showLoading === 'function') showLoading();
+    google.script.run.withSuccessHandler(function (r) {
+      if (typeof hideLoading === 'function') hideLoading();
+      if (typeof showToast === 'function') showToast(r && r.success ? '🎲 ' + r.msg : '⚠️ ' + ((r && r.msg) || '돌리지 못했어요.'));
+      if (r && r.success) { stkRefresh(false); stkFillCustomers(); }
+    }).withFailureHandler(function (err) {
+      if (typeof hideLoading === 'function') hideLoading();
+      alert('오류: ' + err.message);
+    }).runStockStep(cc());
+  };
+
+  // 자동으로 돌리기 켜기/끄기 (선생님)
+  window.stkSetAuto = function (on) {
+    google.script.run.withSuccessHandler(function (r) {
+      if (typeof showToast === 'function') showToast(r && r.success ? '✅ ' + r.msg : '⚠️ ' + ((r && r.msg) || '바꾸지 못했어요.'));
+      stkRefresh(false);
+    }).withFailureHandler(function (err) { alert('오류: ' + err.message); stkRefresh(false); })
+      .setStockAuto(cc(), on === true);
+  };
 
   function sparkline(arr, up) {
     if (!arr || arr.length < 2) return '';
@@ -88,11 +121,11 @@
     var cur = ($('stk-stock') || {}).value;
     var h = '';
     market.stocks.forEach(function (s) {
-      var up = s.change24 >= 0;
+      var up = s.change >= 0;
       h += '<div class="stk-card' + (cur === s.id ? ' on' : '') + '" onclick="stkPick(\'' + s.id + '\')">';
       h += '<div class="stk-card-top"><span class="stk-emoji">' + s.emoji + '</span><div><div class="stk-name">' + esc(s.name) + '</div><div class="stk-sector">' + esc(s.sector) + '</div></div></div>';
       h += '<div class="stk-price">' + won(s.price) + '</div>';
-      h += '<div class="stk-chg ' + (up ? 'up' : 'down') + '">' + (up ? '▲ ' : '▼ ') + Math.abs(s.change24) + '% <span>최근 24시간</span></div>';
+      h += '<div class="stk-chg ' + (s.change > 0 ? 'up' : s.change < 0 ? 'down' : 'flat') + '">' + (s.change > 0 ? '▲ ' : s.change < 0 ? '▼ ' : '– ') + Math.abs(s.change) + '% <span>지난 변동</span></div>';
       h += sparkline(s.history, up);
       h += '<div class="stk-ai">🤖 ' + esc(s.comment) + '</div>';
       h += '</div>';
@@ -144,7 +177,7 @@
   window.stkLoadHoldings = function () {
     var who = ($('stk-customer') || {}).value;
     if (!who) { renderHoldings(null); return; }
-    google.script.run.withSuccessHandler(function (r) { if (r && r.success) { market = r; nextAt = Date.now() + (r.nextMs || 0); renderHoldings(r.holdings); } })
+    google.script.run.withSuccessHandler(function (r) { if (r && r.success) { market = r; renderStatus(); renderHoldings(r.holdings); } })
       .getStockMarket(cc(), who);
   };
 
@@ -173,7 +206,7 @@
     if (!s) return alert('종목을 골라 주세요.');
     var label = ($('stk-customer').selectedOptions[0] || {}).textContent || who + '번';
     if (!confirm('[' + (side === 'buy' ? '사기 (매수)' : '팔기 (매도)') + ']\n\n고객: ' + label.split('·')[0].trim() + '\n종목: ' + s.emoji + ' ' + s.name +
-      '\n수량: ' + qty + '주\n지금 가격: 1주 ' + won(s.price) + '\n금액: ' + won(s.price * qty) + '\n\n가격이 바뀌는 순간이면 거래 시점 가격으로 처리돼요. 진행할까요?')) return;
+      '\n수량: ' + qty + '주\n지금 가격: 1주 ' + won(s.price) + '\n금액: ' + won(s.price * qty) + '\n\n진행할까요?')) return;
     if (typeof showLoading === 'function') showLoading();
     var operator = (typeof _sno !== 'undefined' && _sno) || '교사';
     google.script.run.withSuccessHandler(function (r) {
@@ -184,5 +217,77 @@
       if (typeof hideLoading === 'function') hideLoading();
       alert('오류: ' + err.message);
     }).tradeStock(cc(), operator, who, id, side, qty);
+  };
+
+  // ======================================================================
+  // 마스터 → 📈 증권회사 : 가격 돌리기 + 종목 이름·변동 폭 설정 (선생님)
+  // ======================================================================
+  var adminCC = function () { return (typeof _adminCC !== 'undefined' && _adminCC) || cc(); };
+
+  window.loadStockAdmin = function () {
+    var box = $('sa-stocks'); if (!box) return;
+    google.script.run.withSuccessHandler(function (r) {
+      if (!r || !r.success) { box.innerHTML = '<div class="empty-msg">불러오지 못했어요.</div>'; return; }
+      if ($('sa-auto')) $('sa-auto').checked = !!r.auto;
+      if ($('sa-status')) $('sa-status').innerHTML =
+        (r.auto ? '⏰ 다음 자동 변동: <b>' + esc(r.nextAutoLabel) + '</b>' : '✋ 자동 변동 꺼짐') +
+        '<br><span>지금까지 ' + (r.round || 0) + '번 바뀜' + (r.lastRunLabel ? ' · 마지막: ' + esc(r.lastRunLabel) + (r.lastRunBy ? ' (' + esc(r.lastRunBy) + ')' : '') : '') + '</span>';
+      var inp = 'padding:9px 10px;border:2px solid #E2E8F0;border-radius:10px;font-size:15px;font-family:inherit;outline:none;box-sizing:border-box;width:100%;min-width:0;';
+      var h = '<div class="sa-row sa-head"><div>그림</div><div>종목 이름</div><div>업종</div><div>최소 %</div><div>최대 %</div><div>지금 가격</div></div>';
+      r.stocks.forEach(function (s) {
+        h += '<div class="sa-row" data-id="' + esc(s.id) + '">';
+        h += '<input class="sa-emoji" maxlength="4" value="' + esc(s.emoji) + '" style="' + inp + 'text-align:center;font-size:20px;">';
+        h += '<input class="sa-name" maxlength="20" placeholder="종목 이름" value="' + esc(s.name) + '" style="' + inp + '">';
+        h += '<input class="sa-sector" maxlength="20" placeholder="예: 과자·식품" value="' + esc(s.sector) + '" style="' + inp + '">';
+        h += '<input class="sa-min" type="number" step="0.5" min="-30" max="30" value="' + s.minPct + '" style="' + inp + 'color:#2563EB;">';
+        h += '<input class="sa-max" type="number" step="0.5" min="-30" max="30" value="' + s.maxPct + '" style="' + inp + 'color:#E11D48;">';
+        h += '<div class="sa-price">' + won(s.price) + '</div>';
+        h += '</div>';
+      });
+      box.innerHTML = h;
+    }).getStockMarket(adminCC());
+  };
+
+  window.stockAdminSave = function () {
+    var rows = document.querySelectorAll('#sa-stocks .sa-row[data-id]'), list = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], q = function (c) { return (r.querySelector(c) || {}).value || ''; };
+      var lo = parseFloat(q('.sa-min')), hi = parseFloat(q('.sa-max'));
+      if (!q('.sa-name').trim()) return alert((i + 1) + '번째 종목 이름을 적어 주세요.');
+      if (isNaN(lo) || isNaN(hi)) return alert(q('.sa-name') + ': 변동 폭을 숫자로 적어 주세요.');
+      if (lo > hi) return alert(q('.sa-name') + ': 최소 %가 최대 %보다 클 수 없어요.');
+      if (lo < -30 || hi > 30) return alert(q('.sa-name') + ': 변동 폭은 -30 ~ 30 사이로 적어 주세요.');
+      list.push({ id: r.getAttribute('data-id'), emoji: q('.sa-emoji'), name: q('.sa-name'), sector: q('.sa-sector'), minPct: lo, maxPct: hi });
+    }
+    if (typeof showLoading === 'function') showLoading();
+    google.script.run.withSuccessHandler(function (r) {
+      if (typeof hideLoading === 'function') hideLoading();
+      if (typeof showToast === 'function') showToast(r && r.success ? '✅ ' + r.msg : '⚠️ ' + ((r && r.msg) || '저장하지 못했어요.'));
+      if (r && r.success) loadStockAdmin();
+    }).withFailureHandler(function (err) {
+      if (typeof hideLoading === 'function') hideLoading();
+      alert('오류: ' + err.message);
+    }).setStockSettings(adminCC(), JSON.stringify(list));
+  };
+
+  window.stockAdminRun = function () {
+    if (!confirm('주식 가격을 지금 한 번 바꿀까요?\n종목마다 정해 둔 변동 폭 안에서 무작위로 오르거나 내려요.')) return;
+    if (typeof showLoading === 'function') showLoading();
+    google.script.run.withSuccessHandler(function (r) {
+      if (typeof hideLoading === 'function') hideLoading();
+      if (typeof showToast === 'function') showToast(r && r.success ? '🎲 ' + r.msg : '⚠️ ' + ((r && r.msg) || '돌리지 못했어요.'));
+      if (r && r.success) loadStockAdmin();
+    }).withFailureHandler(function (err) {
+      if (typeof hideLoading === 'function') hideLoading();
+      alert('오류: ' + err.message);
+    }).runStockStep(adminCC());
+  };
+
+  window.stockAdminAuto = function (on) {
+    google.script.run.withSuccessHandler(function (r) {
+      if (typeof showToast === 'function') showToast(r && r.success ? '✅ ' + r.msg : '⚠️ ' + ((r && r.msg) || '바꾸지 못했어요.'));
+      loadStockAdmin();
+    }).withFailureHandler(function (err) { alert('오류: ' + err.message); loadStockAdmin(); })
+      .setStockAuto(adminCC(), on === true);
   };
 })();

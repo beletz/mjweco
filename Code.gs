@@ -1469,112 +1469,213 @@ function buyLottery(classCode, studentNo, amount) {
 
 // ==========================================
 // [증권] AI 모의 투자 — 가상 주식 3종목
-// 가격은 "AI 시장 엔진"(이 아래 계산)이 1시간마다 정해진 규칙과 난수로 바꿉니다.
-//  - 학급 코드 + 종목 + 시간으로 난수를 만들기 때문에, 같은 시간에는 누가 보든 같은 가격이 나옵니다(서버 예약 작업 필요 없음).
-//  - 가끔 뉴스 사건이 생겨 크게 오르거나 내립니다. 뉴스 문장은 아래 템플릿에서 고릅니다.
-//  - 외부 AI(API 키)는 쓰지 않습니다. 공개 사이트에 키를 넣으면 누구나 볼 수 있어서 위험하기 때문입니다.
+// 가격은 저장된 값이 "돌릴 때"만 바뀝니다.
+//  - 직접 돌리기: 선생님이 버튼을 누를 때마다 한 번 바뀜 (runStockStep)
+//  - 자동으로 돌리기: 켜 두면 평일(월~금) 오전 8시 45분마다 한 번 바뀜.
+//    서버 예약 작업이 없으므로, 그 시각이 지난 뒤 누군가 시장을 처음 열 때 밀린 만큼 돌립니다(_stockLoad).
+//  - 한 번 돌릴 때 종목마다 [최소%, 최대%] 사이에서 무작위로 바뀜. 기본 -3% ~ +3%, 선생님이 마스터 → 증권회사에서 바꿈.
+//  - 크게 움직이면 "AI 뉴스" 문장이 붙습니다. 외부 AI(API 키)는 쓰지 않습니다(공개 사이트라 키가 노출됨).
+// StockMarket:   [0]학급코드 [1]시장 상태(JSON)
 // StockHoldings: [0]학급코드 [1]학생번호 [2]종목ID [3]보유수량 [4]평균매수가
 // ==========================================
-var STOCK_TICK_MS = 60 * 60 * 1000;               // 1시간마다 가격 변동
-var STOCK_EPOCH   = Date.UTC(2026, 10, 1, 0, 0, 0); // 시장이 열린 기준 시각 (2026-11-01)
-var STOCK_LIST = [
-  { id: 'cookie', name: '달콤쿠키',     emoji: '🍪', sector: '과자·식품', base: 1000, vol: 0.007, drift: 0.0002,
-    good: ['신제품 "무지개 쿠키"가 학교 앞 매점에서 품절됐어요', '급식 디저트로 뽑혔어요', '새 공장을 지어 더 싸게 만들 수 있게 됐어요', '해외로 수출을 시작했어요'],
-    bad:  ['설탕 값이 크게 올랐어요', '쿠키 포장이 잘 안 뜯긴다는 불만이 많아요', '경쟁 회사가 더 싼 쿠키를 내놓았어요', '공장 기계가 고장 나서 하루 쉬었어요'] },
-  { id: 'rocket', name: '별빛우주항공', emoji: '🚀', sector: '우주·과학', base: 2000, vol: 0.018, drift: 0.0003,
-    good: ['로켓 발사에 성공했어요', '나라에서 큰 우주 탐사 계약을 맺었어요', '달 기지 설계 대회에서 1등을 했어요', '새 엔진 실험에 성공했어요'],
-    bad:  ['로켓 발사가 날씨 때문에 미뤄졌어요', '시험 비행 중 부품에 문제가 생겼어요', '우주 사업 예산이 줄어들었어요', '중요한 기술자가 다른 회사로 떠났어요'] },
-  { id: 'game',   name: '픽셀게임즈',   emoji: '🎮', sector: '게임·놀이', base: 1500, vol: 0.012, drift: 0.00025,
-    good: ['새 게임이 다운로드 1위를 했어요', '게임 대회를 열어 사람들이 많이 모였어요', '인기 캐릭터 인형이 잘 팔려요', '새 업데이트가 재미있다는 칭찬을 받았어요'],
-    bad:  ['게임 서버가 하루 동안 멈췄어요', '새 게임 출시가 늦어진대요', '버그가 많다는 소식이 퍼졌어요', '비슷한 게임이 새로 나와 손님을 빼앗겼어요'] }
+var STOCK_HISTORY_MAX = 30;          // 그래프에 남길 가격 개수
+var STOCK_AUTO_HOUR = 8, STOCK_AUTO_MIN = 45;
+var STOCK_DEFAULTS = [
+  { id: 'cookie', name: '달콤쿠키',     emoji: '🍪', sector: '과자·식품', price: 1000 },
+  { id: 'rocket', name: '별빛우주항공', emoji: '🚀', sector: '우주·과학', price: 2000 },
+  { id: 'game',   name: '픽셀게임즈',   emoji: '🎮', sector: '게임·놀이', price: 1500 }
 ];
+var STOCK_NEWS_GOOD = ['{n}의 새 상품이 큰 인기를 끌었어요', '{n}이(가) 큰 계약을 따냈어요', '{n}의 이번 달 판매가 아주 좋았대요',
+                       '{n}에 대한 좋은 소식이 퍼졌어요', '{n}이(가) 새 기술 개발에 성공했어요', '{n}의 손님이 크게 늘었어요'];
+var STOCK_NEWS_BAD  = ['{n}의 새 상품이 기대보다 덜 팔렸어요', '{n}의 공장에 문제가 생겼어요', '{n}의 재료 값이 크게 올랐어요',
+                       '{n}에 대한 걱정스러운 소식이 퍼졌어요', '{n}의 경쟁 회사가 더 좋은 상품을 내놓았어요', '{n}의 손님이 줄었어요'];
 
-function _stockHash(str) {
-  var h = 2166136261;
-  for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-function _stockRand(seed) { // 0~1 사이 난수 (같은 seed면 항상 같은 값)
-  var t = (seed + 0x6D2B79F5) >>> 0;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-}
-function _stockTickNow() { return Math.max(0, Math.floor((Date.now() - STOCK_EPOCH) / STOCK_TICK_MS)); }
-function _stockTickLabel(tick) {
-  return Utilities.formatDate(new Date(STOCK_EPOCH + tick * STOCK_TICK_MS), Session.getScriptTimeZone(), 'MM-dd HH:00');
-}
-
-// 한 종목의 가격 흐름을 처음부터 지금까지 계산
-function _stockSimulate(cc, s, upto) {
-  var price = s.base, prices = [], news = [];
-  for (var t = 0; t <= upto; t++) {
-    var key = cc + '|' + s.id + '|' + t;
-    var r1 = _stockRand(_stockHash(key + '|a')), r2 = _stockRand(_stockHash(key + '|b')), r3 = _stockRand(_stockHash(key + '|c'));
-    var noise = (r1 + r2 + r3 - 1.5) * 2 * s.vol;               // 평소의 작은 출렁임
-    var pull = 0;                                                // 너무 오르거나 내리면 제자리로 돌아오려는 힘
-    if (price > s.base * 2.5) pull = -0.01; else if (price < s.base * 0.4) pull = 0.01;
-    var change = s.drift + noise + pull;
-    var ev = _stockRand(_stockHash(key + '|ev'));
-    if (t > 0 && ev < 0.015) {                                   // 1.5% 확률로 뉴스 사건 (종목마다 대략 사흘에 한 번)
-      var up = _stockRand(_stockHash(key + '|dir')) < 0.52;
-      var size = 0.04 + _stockRand(_stockHash(key + '|size')) * 0.08;  // 4~12%
-      var pool = up ? s.good : s.bad;
-      var line = pool[Math.floor(_stockRand(_stockHash(key + '|txt')) * pool.length)];
-      change += up ? size : -size;
-      news.push({ tick: t, stockId: s.id, up: up, pct: Math.round((up ? size : -size) * 1000) / 10, text: line });
-    }
-    price = Math.max(Math.round(s.base * 0.1), Math.round(price * (1 + change)));
-    prices.push(price);
+// 한국 시간(UTC+9, 서머타임 없음) 기준 계산
+var KST_MS = 9 * 60 * 60 * 1000;
+function _stockNextAutoAt(fromMs) {           // fromMs 이후 첫 평일 08:45
+  var k = new Date(fromMs + KST_MS);
+  var t = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate(), STOCK_AUTO_HOUR, STOCK_AUTO_MIN) - KST_MS;
+  for (var i = 0; i < 10; i++) {
+    var dow = new Date(t + KST_MS).getUTCDay();   // 0=일, 6=토
+    if (t > fromMs && dow !== 0 && dow !== 6) return t;
+    t += 24 * 60 * 60 * 1000;
   }
-  return { prices: prices, news: news };
+  return t;
+}
+function _stockWhenLabel(ms) {
+  if (!ms) return '';
+  var k = new Date(ms + KST_MS), days = ['일','월','화','수','목','금','토'];
+  var h = k.getUTCHours(), m = k.getUTCMinutes();
+  return (k.getUTCMonth() + 1) + '월 ' + k.getUTCDate() + '일(' + days[k.getUTCDay()] + ') ' + (h < 12 ? '오전 ' : '오후 ') + ((h % 12) || 12) + ':' + (m < 10 ? '0' : '') + m;
 }
 
-// AI 애널리스트 한마디 (예측이 아니라 최근 흐름 설명)
-function _stockComment(s, prices) {
-  var n = prices.length, now = prices[n - 1];
-  var d1 = n > 24 ? (now - prices[n - 25]) / prices[n - 25] : 0;
-  var w = prices.slice(Math.max(0, n - 168));
-  var hi = Math.max.apply(null, w), lo = Math.min.apply(null, w);
-  var swing = lo > 0 ? (hi - lo) / lo : 0;
+function _stockDefaultState() {
+  return {
+    round: 0, auto: false, nextAutoAt: 0, lastRunAt: 0, lastRunBy: '',
+    stocks: STOCK_DEFAULTS.map(function (d) {
+      return { id: d.id, name: d.name, emoji: d.emoji, sector: d.sector, price: d.price, minPct: -3, maxPct: 3, history: [d.price], lastPct: 0 };
+    }),
+    news: []
+  };
+}
+
+function _stockSheet(ss, create) {
+  var sheet = ss.getSheetByName('StockMarket');
+  if (!sheet && create) { sheet = ss.insertSheet('StockMarket'); sheet.appendRow(['학급코드', '시장상태']); }
+  return sheet;
+}
+
+function _stockSave(cc, state) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = _stockSheet(ss, true);
+  var data = sheet.getDataRange().getValues(), json = JSON.stringify(state);
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(json); return; }
+  sheet.appendRow([cc, json]);
+}
+
+// 한 번 돌리기 (가격 변동)
+function _stockStep(state, by) {
+  state.stocks.forEach(function (s) {
+    var lo = Number(s.minPct), hi = Number(s.maxPct);
+    if (isNaN(lo)) lo = -3; if (isNaN(hi)) hi = 3; if (hi < lo) { var t = lo; lo = hi; hi = t; }
+    var pct = Math.round((lo + Math.random() * (hi - lo)) * 10) / 10;
+    s.price = Math.max(10, Math.round(s.price * (1 + pct / 100)));
+    s.lastPct = pct;
+    s.history = (s.history || []).concat([s.price]).slice(-STOCK_HISTORY_MAX);
+    var big = Math.max(Math.abs(lo), Math.abs(hi)) * 0.6;            // 범위의 60% 넘게 움직이면 뉴스
+    if (big > 0 && Math.abs(pct) >= big) {
+      var pool = pct > 0 ? STOCK_NEWS_GOOD : STOCK_NEWS_BAD;
+      state.news.unshift({ at: Date.now(), stockId: s.id, up: pct > 0, pct: pct, text: pool[Math.floor(Math.random() * pool.length)].replace('{n}', s.name) });
+    }
+  });
+  state.news = state.news.slice(0, 15);
+  state.round = (state.round || 0) + 1;
+  state.lastRunAt = Date.now();
+  state.lastRunBy = by || '';
+}
+
+// 시장 상태 읽기 (+ 자동 돌리기 시각이 지났으면 밀린 만큼 돌리고 저장)
+function _stockLoad(classCode) {
+  var cc = cleanText(classCode);
+  var sheet = _stockSheet(SpreadsheetApp.getActiveSpreadsheet(), false), state = null;
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { try { state = JSON.parse(String(data[i][1] || '')); } catch (pe) { state = null; } break; }
+  }
+  var fresh = !state;
+  if (fresh) state = _stockDefaultState();
+  var ran = 0;
+  if (state.auto && state.nextAutoAt) {
+    while (Date.now() >= state.nextAutoAt && ran < 20) {   // 오래 안 열었으면 밀린 평일 수만큼 (최대 20번)
+      _stockStep(state, '자동');
+      state.lastRunAt = state.nextAutoAt;
+      state.nextAutoAt = _stockNextAutoAt(state.nextAutoAt);
+      ran++;
+    }
+  }
+  if (ran > 0) _stockSave(cc, state);
+  return state;
+}
+
+function _stockComment(s) {
+  var h = s.history || [], n = h.length, now = h[n - 1];
+  if (n < 2) return '아직 가격이 한 번도 바뀌지 않았어요. 첫 변동을 기다려 봐요.';
+  var last = s.lastPct || 0;
+  var back = h[Math.max(0, n - 6)], five = back ? (now - back) / back : 0;
   var msg;
-  if (d1 > 0.08) msg = '하루 사이에 많이 올랐어요. 많이 오른 뒤에는 다시 내려가기도 하니 조심해요.';
-  else if (d1 < -0.08) msg = '하루 사이에 많이 내렸어요. 왜 내렸는지 뉴스를 먼저 살펴봐요.';
-  else if (d1 > 0.02) msg = '조금씩 오르는 중이에요.';
-  else if (d1 < -0.02) msg = '조금씩 내리는 중이에요.';
-  else msg = '큰 변화 없이 잔잔해요.';
-  msg += swing > 0.4 ? ' 이번 주 오르내림이 큰 종목이라 위험도 커요.' : swing > 0.2 ? ' 이번 주 오르내림은 보통이에요.' : ' 이번 주는 비교적 안정적이었어요.';
+  if (last >= 2) msg = '지난번에 많이 올랐어요. 많이 오른 뒤에는 다시 내려가기도 해요.';
+  else if (last <= -2) msg = '지난번에 많이 내렸어요. 왜 내렸는지 뉴스를 살펴봐요.';
+  else if (last > 0) msg = '지난번에 조금 올랐어요.';
+  else if (last < 0) msg = '지난번에 조금 내렸어요.';
+  else msg = '지난번과 가격이 같아요.';
+  if (n >= 6) msg += five > 0.05 ? ' 최근 5번 동안 꾸준히 오르는 편이에요.' : five < -0.05 ? ' 최근 5번 동안 내려가는 편이에요.' : ' 최근 5번 동안은 비슷한 가격이었어요.';
+  var range = Math.max(Math.abs(s.minPct), Math.abs(s.maxPct));
+  msg += range >= 8 ? ' 한 번에 크게 움직이는 종목이라 위험도 커요.' : '';
   return msg;
+}
+
+function _stockPublic(state) {
+  return state.stocks.map(function (s) {
+    return { id: s.id, name: s.name, emoji: s.emoji, sector: s.sector, price: s.price, change: s.lastPct || 0,
+             history: s.history || [s.price], minPct: s.minPct, maxPct: s.maxPct, comment: _stockComment(s) };
+  });
 }
 
 function getStockMarket(classCode, studentNo) {
   try {
     var cc = cleanText(classCode);
-    var tick = _stockTickNow();
-    var stocks = [], allNews = [];
-    STOCK_LIST.forEach(function (s) {
-      var sim = _stockSimulate(cc, s, tick);
-      var p = sim.prices, n = p.length, now = p[n - 1];
-      var prev = n > 24 ? p[n - 25] : p[0];
-      stocks.push({
-        id: s.id, name: s.name, emoji: s.emoji, sector: s.sector, price: now,
-        change24: prev ? Math.round((now - prev) / prev * 1000) / 10 : 0,
-        history: p.slice(Math.max(0, n - 48)),
-        comment: _stockComment(s, p)
-      });
-      sim.news.slice(-6).forEach(function (e) { allNews.push(e); });
+    var state = _stockLoad(cc);
+    var stocks = _stockPublic(state), byId = {};
+    stocks.forEach(function (s) { byId[s.id] = s; });
+    var news = (state.news || []).map(function (e) {
+      var s = byId[e.stockId] || { emoji: '📈', name: '' };
+      return { when: _stockWhenLabel(e.at), stockId: e.stockId, emoji: s.emoji, name: s.name, up: e.up, pct: e.pct, text: e.text };
     });
-    allNews.sort(function (a, b) { return b.tick - a.tick; });
-    var byId = {}; STOCK_LIST.forEach(function (s) { byId[s.id] = s; });
-    var news = allNews.slice(0, 10).map(function (e) {
-      var s = byId[e.stockId];
-      return { when: _stockTickLabel(e.tick), stockId: e.stockId, emoji: s.emoji, name: s.name, up: e.up, pct: e.pct, text: e.text };
-    });
-    var nextMs = STOCK_EPOCH + (tick + 1) * STOCK_TICK_MS - Date.now();
-    var res = { success: true, tick: tick, nextMs: nextMs, stocks: stocks, news: news };
+    var res = { success: true, round: state.round || 0, auto: !!state.auto, nextAutoAt: state.auto ? state.nextAutoAt : 0,
+                nextAutoLabel: state.auto ? _stockWhenLabel(state.nextAutoAt) : '', lastRunLabel: _stockWhenLabel(state.lastRunAt),
+                lastRunBy: state.lastRunBy || '', stocks: stocks, news: news };
     if (studentNo !== undefined && studentNo !== null && String(studentNo) !== '') res.holdings = _stockHoldingsOf(cc, String(studentNo), stocks);
     return res;
   } catch(e) { return { success: false, msg: e.message }; }
+}
+
+// 직접 돌리기 (선생님)
+function runStockStep(classCode) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var cc = cleanText(classCode);
+    var state = _stockLoad(cc);
+    _stockStep(state, '직접');
+    _stockSave(cc, state);
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    var lines = state.stocks.map(function (s) { return s.emoji + ' ' + s.name + ' ' + (s.lastPct > 0 ? '▲ +' : s.lastPct < 0 ? '▼ ' : '') + s.lastPct + '% → ' + s.price.toLocaleString(); });
+    return { success: true, msg: state.round + '번째 가격 변동 완료!\n' + lines.join('\n') };
+  } catch(e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// 자동으로 돌리기 켜기/끄기
+function setStockAuto(classCode, on) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var cc = cleanText(classCode);
+    var state = _stockLoad(cc);
+    state.auto = on === true;
+    state.nextAutoAt = state.auto ? _stockNextAutoAt(Date.now()) : 0;
+    _stockSave(cc, state);
+    return { success: true, auto: state.auto, nextAutoLabel: state.auto ? _stockWhenLabel(state.nextAutoAt) : '',
+             msg: state.auto ? '자동으로 돌리기를 켰어요. 다음 변동: ' + _stockWhenLabel(state.nextAutoAt) + ' (토·일 제외)' : '자동으로 돌리기를 껐어요. 이제 직접 돌릴 때만 바뀌어요.' };
+  } catch(e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// 종목 이름·이모지·업종·변동 폭 설정 (선생님)
+function setStockSettings(classCode, settingsJson) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var cc = cleanText(classCode);
+    var list = typeof settingsJson === 'string' ? JSON.parse(settingsJson || '[]') : (settingsJson || []);
+    var state = _stockLoad(cc), byId = {};
+    list.forEach(function (x) { if (x && x.id) byId[x.id] = x; });
+    for (var i = 0; i < state.stocks.length; i++) {
+      var s = state.stocks[i], x = byId[s.id]; if (!x) continue;
+      var name = String(x.name || '').trim().slice(0, 20);
+      if (!name) return { success: false, msg: (i + 1) + '번째 종목 이름을 적어 주세요.' };
+      var lo = Number(x.minPct), hi = Number(x.maxPct);
+      if (isNaN(lo) || isNaN(hi)) return { success: false, msg: name + ': 변동 폭을 숫자로 적어 주세요.' };
+      if (lo < -30 || hi > 30) return { success: false, msg: name + ': 변동 폭은 -30% ~ +30% 사이로 적어 주세요.' };
+      if (lo > hi) return { success: false, msg: name + ': 최소(%)가 최대(%)보다 클 수 없어요.' };
+      s.name = name;
+      s.emoji = String(x.emoji || s.emoji).trim().slice(0, 4) || s.emoji;
+      s.sector = String(x.sector || '').trim().slice(0, 20);
+      s.minPct = Math.round(lo * 10) / 10; s.maxPct = Math.round(hi * 10) / 10;
+    }
+    _stockSave(cc, state);
+    return { success: true, msg: '증권회사 종목 설정을 저장했어요!' };
+  } catch(e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
 }
 
 function getOrCreateStockHoldingsSheet(ss) {
@@ -1604,13 +1705,11 @@ function _stockValueMap(classCode) {
   var cc = cleanText(classCode), map = {};
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('StockHoldings');
   if (!sheet) return map;
-  var data = sheet.getDataRange().getValues(), need = {}, any = false;
-  for (var i = 1; i < data.length; i++) {
-    if (cleanText(data[i][0]) === cc && (Number(data[i][3]) || 0) > 0) { need[String(data[i][2])] = true; any = true; }
-  }
+  var data = sheet.getDataRange().getValues(), any = false;
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc && (Number(data[i][3]) || 0) > 0) { any = true; break; }
   if (!any) return map;
-  var tick = _stockTickNow(), price = {};
-  STOCK_LIST.forEach(function (s) { if (need[s.id]) { var p = _stockSimulate(cc, s, tick).prices; price[s.id] = p[p.length - 1]; } });
+  var price = {};
+  _stockLoad(cc).stocks.forEach(function (s) { price[s.id] = s.price; });
   for (var j = 1; j < data.length; j++) {
     if (cleanText(data[j][0]) !== cc) continue;
     var qty = Number(data[j][3]) || 0, p2 = price[String(data[j][2])];
@@ -1632,12 +1731,9 @@ function tradeStock(classCode, operatorNo, customerNo, stockId, side, quantity) 
     if (isNaN(qty) || qty <= 0) return { success: false, msg: '수량을 1주 이상 입력해 주세요.' };
     if (qty > 1000) return { success: false, msg: '한 번에 1000주까지 거래할 수 있어요.' };
     if (side !== 'buy' && side !== 'sell') return { success: false, msg: '사기/팔기를 골라 주세요.' };
-    var s = null; STOCK_LIST.forEach(function (x) { if (x.id === stockId) s = x; });
+    var s = null; _stockLoad(cc).stocks.forEach(function (x) { if (x.id === stockId) s = x; });
     if (!s) return { success: false, msg: '종목을 찾을 수 없습니다.' };
-
-    var sim = _stockSimulate(cc, s, _stockTickNow());
-    var price = sim.prices[sim.prices.length - 1];
-    var total = price * qty;
+    var price = s.price, total = price * qty;
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var stuSheet = getOrCreateStudentsSheet(ss), tSheet = getOrCreateTransSheet(ss), hSheet = getOrCreateStockHoldingsSheet(ss);

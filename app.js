@@ -236,6 +236,7 @@ function mdTab(panelId, tabEl){
   if(panelId==='md-wallet')            { refreshTeacherSel(); }
   if(panelId==='md-treasury-approval') { loadTeacherTreasury(); loadTreasuryMenuEditor(); }
   if(panelId==='md-fulllog'){ loadFullLog(); }
+  if(panelId==='md-stock-admin'){ if(typeof loadStockAdmin==='function') loadStockAdmin(); }
 
   refreshMasterPendingBadges(); // ★ 탭 전환마다 결재 대기 배지 갱신
 }
