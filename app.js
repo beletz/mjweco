@@ -319,7 +319,7 @@ function renderList(list){
   list.forEach(function(s){
     var sno=s.studentNo;
     var isBankrupt=(s.card<0||s.bank<0);
-    h+='<tr>'+
+    h+='<tr data-sno="'+esc(String(sno))+'" oninput="stuRowEdited(this,event)" onchange="stuRowEdited(this,event)">'+
       // 체크박스
       '<td style="text-align:center;"><input type="checkbox" class="stu-check" value="'+sno+'" style="width:16px;height:16px;cursor:pointer;accent-color:var(--purple);"></td>'+
       // 번호
@@ -346,6 +346,7 @@ function renderList(list){
       '</td></tr>';
   });
   tb.innerHTML=h;
+  stuSelCount();
 }
 
 // 학생 선택 목록 글자: "3번 홍길동 [은행청장] · 💳 1,200 · 🏦 300"
@@ -875,6 +876,7 @@ function loadTeacherWallet(){
   var g=creditGrade(stu.credit||0);$('t-grade-num').textContent=g.num;$('t-grade-lbl').textContent=g.label;
   $('t-credit').textContent=stu.credit||0;
   $('t-total').textContent=(Number(stu.card||0)+Number(stu.bank||0)+Number(stu.stock||0)).toLocaleString()+' 머니';
+  if($('t-stock')) $('t-stock').textContent=Number(stu.stock||0).toLocaleString()+' 머니';
   $('t-card').textContent=Number(stu.card||0).toLocaleString()+' 머니';
   $('t-bank').textContent=Number(stu.bank||0).toLocaleString()+' 머니';
   loadTx(_adminCC,sno,'t-tx-tbody','t-tx-cnt');
@@ -895,8 +897,7 @@ function doTeacherRecord(){
       if(r.success){
         showToast('✅ 수입 기록 완료');$('t-memo').value='';$('t-amt').value='';
         $('t-card').textContent=Number(r.newCard).toLocaleString()+' 머니';
-        var bank=parseInt(($('t-bank').textContent||'0').replace(/[^0-9]/g,''))||0;
-        $('t-total').textContent=(Number(r.newCard)+bank).toLocaleString()+' 머니';
+        walletRecalcTotal('t');
         loadTx(_adminCC,sno,'t-tx-tbody','t-tx-cnt');loadList();
       } else alert(r.msg);
     }).recordIncome(_adminCC,sno,memo,amt,'교사수동지급');
@@ -905,8 +906,7 @@ function doTeacherRecord(){
       if(r.success){
         showToast('✅ 지출 기록 완료');$('t-memo').value='';$('t-amt').value='';
         $('t-card').textContent=Number(r.newCard).toLocaleString()+' 머니';
-        var bank=parseInt(($('t-bank').textContent||'0').replace(/[^0-9]/g,''))||0;
-        $('t-total').textContent=(Number(r.newCard)+bank).toLocaleString()+' 머니';
+        walletRecalcTotal('t');
         loadTx(_adminCC,sno,'t-tx-tbody','t-tx-cnt');loadList();
       } else alert(r.msg);
     }).recordExpense(_adminCC,sno,memo,amt);
@@ -916,6 +916,12 @@ function doTeacherRecord(){
 // ============================================================
 // 거래 내역 공통
 // ============================================================
+// 용돈기입장 위쪽 금액 카드: 총 자산 = 카드 + 은행 + 주식(지금 가격). prefix 's'(국민) 또는 't'(마스터)
+function walletRecalcTotal(prefix){
+  var num=function(id){ var el=$(prefix+'-'+id); if(!el) return 0; var t=(el.textContent||'').replace(/[^0-9-]/g,''); return parseInt(t)||0; };
+  var tot=$(prefix+'-total'); if(tot) tot.textContent=(num('card')+num('bank')+num('stock')).toLocaleString()+' 머니';
+}
+
 var _txCtx = {};   // 표마다 {cc, sno, list} — 선생님 수정·삭제 버튼이 씀
 function loadTx(cc,sno,tbodyId,cntId){
   var tbl=$(tbodyId) && $(tbodyId).closest('table');
@@ -957,6 +963,7 @@ function txAfterChange(tbodyId){
     if(tbodyId==='s-tx-tbody'){ if(stu) initStudentWallet(stu); if(typeof fillWalletStudentSelect==='function' && $('w-stu-sel')) { var keep=$('w-stu-sel').value; fillWalletStudentSelect(); $('w-stu-sel').value=keep; } }
     else if(tbodyId==='t-tx-tbody' && stu){
       $('t-total').textContent=(Number(stu.card||0)+Number(stu.bank||0)+Number(stu.stock||0)).toLocaleString()+' 머니';
+      if($('t-stock')) $('t-stock').textContent=Number(stu.stock||0).toLocaleString()+' 머니';
       $('t-card').textContent=Number(stu.card||0).toLocaleString()+' 머니';
       $('t-bank').textContent=Number(stu.bank||0).toLocaleString()+' 머니';
     }
@@ -1083,6 +1090,7 @@ function initStudentWallet(r){
   $('s-grade-num').textContent=g.num;$('s-grade-lbl').textContent=g.label;
   $('s-credit').textContent=r.credit||0;
   $('s-total').textContent=(Number(r.card||0)+Number(r.bank||0)+Number(r.stock||0)).toLocaleString()+' 머니';
+  if($('s-stock')) $('s-stock').textContent=Number(r.stock||0).toLocaleString()+' 머니';
   $('s-card').textContent=Number(r.card||0).toLocaleString()+' 머니';
   $('s-bank').textContent=Number(r.bank||0).toLocaleString()+' 머니';
 }
@@ -1249,8 +1257,7 @@ function doExpense(){
         showToast(isInc ? '✅ 수입이 기록되었습니다.' : '✅ 지출이 기록되었습니다.');
         $('exp-memo').value=''; $('exp-amt').value='';
         $('s-card').textContent=Number(r.newCard).toLocaleString()+' 머니';
-        var bank=parseInt(($('s-bank').textContent||'0').replace(/[^0-9]/g,''))||0;
-        $('s-total').textContent=(Number(r.newCard)+bank).toLocaleString()+' 머니';
+        walletRecalcTotal('s');
         var stu=(_stuList||[]).find(function(s){ return String(s.studentNo)===String(sno); });
         if(stu) stu.card=Number(r.newCard);
         loadTx(cc,sno,'s-tx-tbody','s-tx-cnt');
@@ -1307,7 +1314,7 @@ function doDeposit(){
       showToast('✅ '+r.msg);$('dep-amt').value='';
       $('s-card').textContent=Number(r.newCard).toLocaleString()+' 머니';
       $('s-bank').textContent=Number(r.newBank).toLocaleString()+' 머니';
-      $('s-total').textContent=(Number(r.newCard)+Number(r.newBank)).toLocaleString()+' 머니';
+      walletRecalcTotal('s');
       loadMyDeposits();
     } else alert(r.msg);
   }).createDeposit(_cc,_sno,weeks,amt);
@@ -1320,7 +1327,7 @@ async function doRedeem(idx){
       showToast('✅ '+r.msg);
       $('s-card').textContent = Number(r.newCard).toLocaleString()+' 머니';
       $('s-bank').textContent = Number(r.newBank).toLocaleString()+' 머니';
-      $('s-total').textContent= (Number(r.newCard)+Number(r.newBank)).toLocaleString()+' 머니';
+      walletRecalcTotal('s');
       // ★ 신용점수 화면 즉시 반영
       if(r.creditGain > 0){
         if($('s-credit')) $('s-credit').textContent = r.newCredit;
@@ -2120,8 +2127,7 @@ function doLottery(){
       $('lottery-emoji').textContent=emoji;$('lottery-text').textContent=r.result;
       $('lottery-sub').textContent=r.prize>0?'당첨금: '+Number(r.prize).toLocaleString()+' 머니 → 카드 입금':'아쉽지만 다음 기회를 노려보세요!';
       $('s-card').textContent=Number(r.newCard).toLocaleString()+' 머니';
-      var bank=parseInt(($('s-bank').textContent||'0').replace(/[^0-9]/g,''))||0;
-      $('s-total').textContent=(Number(r.newCard)+bank).toLocaleString()+' 머니';
+      walletRecalcTotal('s');
     } else alert(r.msg);
   }).buyLottery(_cc||_adminCC,buyerSno(),amt);
 }
@@ -4027,6 +4033,50 @@ function toggleAllStudents(){
   var master=$('check-all-header');
   var checked=master?master.checked:false;
   document.querySelectorAll('.stu-check').forEach(function(cb){ cb.checked=checked; });
+  stuSelCount();
+}
+
+// ── 국민 관리: 이름·직업·코드를 고친 줄은 자동으로 체크, 체크한 학생 한 번에 저장 ──
+function stuRowEdited(tr, ev){
+  var t=ev && ev.target;
+  var cb=tr.querySelector('.stu-check');
+  if(t && t!==cb && cb && t.tagName!=='BUTTON'){ cb.checked=true; tr.classList.add('stu-edited'); }
+  stuSelCount();
+}
+function stuSelCount(){
+  var n=document.querySelectorAll('#stu-tbody .stu-check:checked').length;
+  if($('stu-sel-cnt')) $('stu-sel-cnt').textContent=n;
+  document.querySelectorAll('#stu-tbody tr[data-sno]').forEach(function(tr){
+    var cb=tr.querySelector('.stu-check'); tr.classList.toggle('stu-picked', !!(cb&&cb.checked));
+  });
+}
+async function doSaveSelected(){
+  var items=[], lines=[];
+  document.querySelectorAll('#stu-tbody .stu-check:checked').forEach(function(cb){
+    var sno=cb.value, old=(_stuList||[]).find(function(s){ return String(s.studentNo)===String(sno); })||{};
+    var name=(($('nm-'+sno)||{}).value||'').trim(), job=($('jb-'+sno)||{}).value||'';
+    var code=(($('cd-'+sno)||{}).value||'').trim().toUpperCase();
+    var codeChanged = !!code && code!==String(old.code||'').toUpperCase();
+    items.push({ sno:sno, name:name, job:job, code: codeChanged ? code : '' });
+    var diff=[];
+    if(name!==(old.name||'')) diff.push('이름 '+(old.name||'(없음)')+' → '+(name||'(없음)'));
+    if(job!==(old.job||'')) diff.push('직업 '+(old.job||'국민')+' → '+(job||'국민'));
+    if(codeChanged) diff.push('코드 → '+code);
+    lines.push(sno+'번 '+(name||old.name||'')+(diff.length?' : '+diff.join(', '):' (바뀐 것 없음)'));
+  });
+  if(!items.length) return alert('저장할 학생을 체크해 주세요.\n(이름·직업·코드를 고치면 그 줄은 자동으로 체크돼요)');
+  var bad=items.filter(function(it){ return it.code && it.code.length<4; });
+  if(bad.length) return alert(bad.map(function(it){ return it.sno+'번'; }).join(', ')+': 접속코드는 4자리 이상 적어 주세요.');
+  if(!await uiConfirm('[체크한 학생 '+items.length+'명 저장]\n\n'+lines.slice(0,15).join('\n')+(lines.length>15?'\n… 외 '+(lines.length-15)+'명':'')+'\n\n이대로 저장할까요?')) return;
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    hideLoading();
+    if(!r||!r.success) return alert((r&&r.msg)||'저장하지 못했어요.');
+    showToast('✅ '+r.msg);
+    var h=$('check-all-header'); if(h) h.checked=false;
+    loadList();
+  }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); })
+  .bulkUpdateStudents(_adminCC, JSON.stringify(items));
 }
 
 // 선택 학생 일괄 삭제
@@ -4807,10 +4857,10 @@ function getTxTypeInfo(type){
 
 function loadFullLog(){
   var tbody=$('fl-tbody');
-  if(tbody) tbody.innerHTML='<tr><td colspan="7" class="empty-msg">⏳ 불러오는 중...</td></tr>';
+  if(tbody) tbody.innerHTML='<tr><td colspan="8" class="empty-msg">⏳ 불러오는 중...</td></tr>';
   google.script.run
     .withSuccessHandler(function(r){
-      if(!r.success){ if(tbody) tbody.innerHTML='<tr><td colspan="7" class="empty-msg">오류: '+r.msg+'</td></tr>'; return; }
+      if(!r.success){ if(tbody) tbody.innerHTML='<tr><td colspan="8" class="empty-msg">오류: '+r.msg+'</td></tr>'; return; }
       _fullLogData = r.list || [];
       // 상단 요약
       if($('fl-total-amount')) $('fl-total-amount').textContent = r.totalAmount.toLocaleString()+' 머니';
@@ -4819,7 +4869,7 @@ function loadFullLog(){
       filterFullLog();
     })
     .withFailureHandler(function(err){
-      if(tbody) tbody.innerHTML='<tr><td colspan="7" class="empty-msg">오류: '+err.message+'</td></tr>';
+      if(tbody) tbody.innerHTML='<tr><td colspan="8" class="empty-msg">오류: '+err.message+'</td></tr>';
     })
     .getAllActivityLog(_adminCC);
 }
@@ -4895,8 +4945,10 @@ function filterFullLog(){
 
 function renderFullLogTable(list){
   var tbody=$('fl-tbody'); if(!tbody) return;
+  if($('fl-check-all')) $('fl-check-all').checked=false;
   if(!list||!list.length){
-    tbody.innerHTML='<tr><td colspan="7" class="empty-msg">해당 내역이 없습니다.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="8" class="empty-msg">해당 내역이 없습니다.</td></tr>';
+    flSelChange();
     return;
   }
   var h='';
@@ -4906,7 +4958,10 @@ function renderFullLogTable(list){
     var expTxt = row.expense ? '<span class="tm">-'+Number(row.expense).toLocaleString()+'</span>': '<span style="color:#CBD5E1;">-</span>';
     var balColor = row.balance>=0?'#1E293B':'#EF4444';
 
-    h+='<tr id="fl-row-'+row.rowNo+'" onmouseover="this.style.background=\'#FAFBFF\'" onmouseout="this.style.background=\'white\'">';
+    h+='<tr id="fl-row-'+row.rowNo+'" onmouseover="this.style.background=\'#FAFBFF\'" onmouseout="this.style.background=\'\'">';
+
+    // 체크박스 (한 번에 지우기)
+    h+='<td class="fl-chk-col"><input type="checkbox" class="fl-chk fl-row-chk" value="'+row.rowNo+'" onclick="flSelChange()" title="이 기록 고르기"></td>';
 
     // 날짜
     h+='<td style="font-size:12px;color:#64748B;white-space:nowrap;">'+esc(row.date)+'</td>';
@@ -4950,6 +5005,43 @@ function renderFullLogTable(list){
     h+='</tr>';
   });
   tbody.innerHTML=h;
+  flSelChange();
+}
+
+// ── 전체 로그: 체크한 기록 한 번에 지우기 ──
+function flToggleAll(on){
+  document.querySelectorAll('#fl-tbody .fl-row-chk').forEach(function(cb){ cb.checked=on; });
+  flSelChange();
+}
+function flSelChange(){
+  var all=document.querySelectorAll('#fl-tbody .fl-row-chk'), n=0;
+  all.forEach(function(cb){
+    if(cb.checked) n++;
+    var tr=cb.closest('tr'); if(tr) tr.classList.toggle('fl-picked', cb.checked);
+  });
+  if($('fl-sel-cnt')) $('fl-sel-cnt').textContent=n;
+  if($('fl-bulk-del')) $('fl-bulk-del').disabled = n===0;
+  var head=$('fl-check-all'); if(head){ head.checked = all.length>0 && n===all.length; head.indeterminate = n>0 && n<all.length; }
+}
+async function flBulkDelete(){
+  var picked=[];
+  document.querySelectorAll('#fl-tbody .fl-row-chk:checked').forEach(function(cb){
+    var rn=Number(cb.value), row=_fullLogData.find(function(r){ return r.rowNo===rn; });
+    if(row) picked.push(row);
+  });
+  if(!picked.length) return alert('지울 기록을 먼저 골라 주세요.');
+  var net=0, who={};
+  picked.forEach(function(r){ net+=(Number(r.income)||0)-(Number(r.expense)||0); who[r.sno]=1; });
+  var preview=picked.slice(0,8).map(function(r){ return r.date+' · '+r.sno+'번 '+(r.name||'')+' · '+r.memo; }).join('\n')+(picked.length>8?'\n… 외 '+(picked.length-8)+'개':'');
+  if(!await uiConfirm('[기록 '+picked.length+'개 한 번에 삭제]\n\n'+preview+'\n\n⚠️ 지운 기록만큼 학생 '+Object.keys(who).length+'명의 카드 잔액이 자동으로 되돌아가요.\n지운 기록은 되돌릴 수 없어요. 삭제할까요?')) return;
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    hideLoading();
+    if(!r||!r.success) return alert((r&&r.msg)||'지우지 못했어요.');
+    showToast('🗑️ '+r.msg);
+    loadFullLog();
+  }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); })
+  .bulkDeleteActivityLogs(_adminCC||_cc, JSON.stringify(picked.map(function(r){ return { rowNo:r.rowNo, sno:r.sno, memo:r.memo }; })));
 }
 
 function startEditLog(rowNo){

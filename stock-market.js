@@ -451,6 +451,21 @@
     }).runStockStep(adminCC());
   };
 
+  // 처음으로 초기화 (선생님): 모든 종목 100 머니부터, 가진 주식은 지금 가격으로 팔아 카드로
+  window.stockAdminReset = async function () {
+    if (!await uiConfirm('[증권회사 처음으로 초기화]\n\n• 모든 종목 가격이 100 머니로 돌아가요.\n• 그래프·뉴스·변동 횟수도 처음부터 다시 시작해요.\n• 학생들이 가진 주식은 지금 가격으로 모두 팔아서 카드로 돌려줘요.\n  (용돈기입장에 [주식 초기화] 매도 기록이 남아요)\n• 종목 이름·변동 폭·% 고정·자동 돌리기 설정은 그대로예요.\n\n되돌릴 수 없어요. 초기화할까요?')) return;
+    if (typeof showLoading === 'function') showLoading();
+    google.script.run.withSuccessHandler(function (r) {
+      if (typeof hideLoading === 'function') hideLoading();
+      if (!r || !r.success) return alert((r && r.msg) || '초기화하지 못했어요.');
+      if (typeof showToast === 'function') showToast('🔄 ' + r.msg);
+      loadStockAdmin();
+    }).withFailureHandler(function (err) {
+      if (typeof hideLoading === 'function') hideLoading();
+      alert('오류: ' + err.message);
+    }).resetStockMarket(adminCC(), '선생님');
+  };
+
   window.stockAdminAuto = function (on) {
     google.script.run.withSuccessHandler(function (r) {
       if (typeof showToast === 'function') showToast(r && r.success ? '✅ ' + r.msg : '⚠️ ' + ((r && r.msg) || '바꾸지 못했어요.'));

@@ -938,3 +938,37 @@ tr.sp-dragging td{border-top:2px solid #C4B5FD;border-bottom:2px solid #C4B5FD}
 .md-panel.act{display:none}
 #view-master-dashboard.active .md-panel.act,
 #view-master-dashboard.active ~ .md-panel.act{display:block}
+
+/* 용돈기입장 금액 카드 4칸: 총 자산 · 카드 · 은행 · 주식(지금 가격) */
+.ag.ag4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.ac2.ac-stock{background:var(--t-purple);border-color:#DCD3FF}
+.ac2.ac-stock .ai,.ac2.ac-stock .av{color:var(--c-purple) !important}
+.stk-reset{margin-left:auto;background:#fff;color:#E5384B;border:1.5px solid #FECDD3;border-radius:12px;padding:10px 16px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;transition:background .15s,transform .1s}
+.stk-reset:hover{background:#FFF1F2}
+.stk-reset:active{transform:scale(.96)}
+
+/* ==========================================================================
+   마스터 관리 화면 전용 배경 — 학생 화면(따뜻한 종이색 #FBF8F2)과 구분되는 차분한 푸른 회색.
+   흰 카드·색 타일·표가 또렷하게 떠 보이도록 너무 진하지 않게.
+   (마스터 패널들은 마스터 화면 상자 바로 뒤에 있어서 body 전체 배경을 바꿈)
+   ========================================================================== */
+:root{ --master-bg:#E8EDF4; }
+body:has(#view-master-dashboard.active){ background:var(--master-bg); }
+body:has(#view-master-dashboard.active) ::-webkit-scrollbar-thumb{ border-color:var(--master-bg); }
+/* 카드가 배경 위에서 더 또렷하게: 테두리를 조금 진하게, 그림자 살짝 */
+#view-master-dashboard.active .dash-tile,
+#view-master-dashboard.active ~ .md-panel .sc,
+#view-master-dashboard.active ~ .md-panel .lp,
+#view-master-dashboard.active ~ .md-panel .rp{ border-color:#D5DCE6; box-shadow:0 1px 2px rgba(28,31,38,.05),0 6px 18px -10px rgba(28,31,38,.18); }
+
+/* ==========================================================================
+   전체 로그 체크박스 + 선택 삭제 / 국민 관리 선택 저장
+   ========================================================================== */
+.fl-chk-col{width:38px;text-align:center !important}
+.fl-chk{width:18px;height:18px;cursor:pointer;accent-color:#EF4444;vertical-align:middle}
+#fl-tbody tr.fl-picked td{background:#FFF1F2 !important}
+.fl-bulk-del{background:#EF4444 !important;color:#fff !important;border:none !important;box-shadow:none !important}
+.fl-bulk-del:disabled{background:#F1F5F9 !important;color:#A0A8B3 !important;cursor:not-allowed}
+#stu-tbody tr.stu-picked td{background:#F0FDF4 !important}
+#stu-tbody tr.stu-edited td:first-child{box-shadow:inset 4px 0 0 #10B981}
+.stu-save-tip{font-size:13px;color:var(--gray)}

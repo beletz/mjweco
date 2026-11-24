@@ -301,7 +301,11 @@
       <div class="st">
   <i class="fa-solid fa-list" style="color:var(--green);"></i> 학생 명단
   <span class="pill" id="stu-cnt-pill">0명</span>
-  <div style="margin-left:auto;display:flex;gap:8px;">
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <span class="stu-save-tip">✏️ 고친 줄은 자동으로 체크돼요</span>
+    <button class="btn btn-sm btn-green" id="stu-save-sel" onclick="doSaveSelected()">
+      <i class="fa-solid fa-floppy-disk"></i> 선택 저장 <span id="stu-sel-cnt">0</span>명
+    </button>
     <button class="btn btn-sm btn-red" onclick="doDelSelected()">
       <i class="fa-solid fa-trash"></i> 선택 삭제
     </button>
@@ -768,10 +772,11 @@
               <div class="crc"><i class="fa-solid fa-crown" style="font-size:18px;color:var(--purple);margin-bottom:1px;"></i><div class="cgn" id="t-grade-num">-</div></div>
               <div><div class="cit">신용: <span id="t-grade-lbl">--</span></div><div class="cis">점수: <span id="t-credit">0</span> 점</div></div>
             </div>
-            <div class="ag">
+            <div class="ag ag4">
               <div class="ac2 tot"><div class="ai">👑</div><div class="al">총 자산</div><div class="av" id="t-total">0 머니</div></div>
               <div class="ac2"><div class="ai" style="color:var(--blue);"><i class="fa-solid fa-credit-card"></i></div><div class="al">카드</div><div class="av" style="color:var(--blue);" id="t-card">0 머니</div></div>
               <div class="ac2"><div class="ai" style="color:var(--green);"><i class="fa-solid fa-building-columns"></i></div><div class="al">은행</div><div class="av" style="color:var(--green);" id="t-bank">0 머니</div></div>
+              <div class="ac2 ac-stock"><div class="ai"><i class="fa-solid fa-arrow-trend-up"></i></div><div class="al">주식 (지금 가격)</div><div class="av" id="t-stock">0 머니</div></div>
             </div>
             <div class="tx-tools"><button class="tx-asset-btn" id="t-asset-btn" style="display:none;" onclick="openAssetEdit('t')">💰 자산 수정</button></div>
             <table class="txt"><thead><tr><th>날짜</th><th>내역</th><th style="text-align:right">수입</th><th style="text-align:right">지출</th><th style="text-align:right">잔액</th><th class="tx-act">관리</th></tr></thead>
@@ -840,8 +845,9 @@
       <button type="button" class="stk-roll" onclick="stockAdminRun()">🎲 직접 돌리기</button>
       <label class="stk-auto"><input type="checkbox" id="sa-auto" onchange="stockAdminAuto(this.checked)"> 자동으로 돌리기</label>
       <div id="sa-status" class="stk-admin-status">-</div>
+      <button type="button" class="stk-reset" onclick="stockAdminReset()">🔄 처음으로 초기화</button>
     </div>
-    <div class="info-box" style="margin-top:12px;margin-bottom:0;">💡 <b>직접 돌리기</b>를 누를 때마다 가격이 한 번 바뀌어요. <b>자동으로 돌리기</b>를 켜 두면 평일(월~금) 오전 8시 45분마다 한 번씩 바뀌어요. 토·일에는 바뀌지 않아요.</div>
+    <div class="info-box" style="margin-top:12px;margin-bottom:0;">💡 <b>직접 돌리기</b>를 누를 때마다 가격이 한 번 바뀌어요. <b>자동으로 돌리기</b>를 켜 두면 평일(월~금) 오전 8시 45분마다 한 번씩 바뀌어요. 토·일에는 바뀌지 않아요.<br>🔄 <b>처음으로 초기화</b>를 누르면 모든 종목이 <b>100 머니</b>에서 다시 시작해요. 학생들이 가진 주식은 초기화 직전 가격으로 모두 팔아 카드로 돌려줘요.</div>
   </div>
   <div class="sc">
     <div class="st">
@@ -906,6 +912,9 @@
         style="background:#7C3AED;color:white;font-size:13px;font-weight:700;padding:6px 14px;border-radius:20px;white-space:nowrap;font-family:'Pretendard',sans-serif;">
         0건
       </span>
+      <button id="fl-bulk-del" onclick="flBulkDelete()" class="btn btn-sm fl-bulk-del" disabled>
+        <i class="fa-solid fa-trash"></i> 선택 삭제 <span id="fl-sel-cnt">0</span>개
+      </button>
             <button onclick="loadFullLog()" class="btn btn-outline btn-sm">
         <i class="fa-solid fa-rotate-right"></i> 새로고침
       </button>
@@ -918,6 +927,7 @@
       <table class="stb">
         <thead style="position:sticky;top:0;z-index:1;background:#F8FAFC;">
           <tr>
+            <th class="fl-chk-col"><input type="checkbox" id="fl-check-all" class="fl-chk" onclick="flToggleAll(this.checked)" title="보이는 기록 모두 선택"></th>
             <th style="min-width:90px;">날짜</th>
             <th style="min-width:160px;">학생 / 패널</th>
             <th style="min-width:220px;">내역</th>
@@ -928,7 +938,7 @@
           </tr>
         </thead>
         <tbody id="fl-tbody">
-          <tr><td colspan="7" class="empty-msg">새로고침을 눌러주세요.</td></tr>
+          <tr><td colspan="8" class="empty-msg">새로고침을 눌러주세요.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1124,10 +1134,11 @@
             <div class="crc"><i class="fa-solid fa-crown" style="font-size:18px;color:var(--purple);margin-bottom:1px;"></i><div class="cgn" id="s-grade-num">-</div></div>
             <div><div class="cit">나의 신용: <span id="s-grade-lbl">--</span></div><div class="cis">현재 점수: <span id="s-credit">0</span> 점</div></div>
           </div>
-          <div class="ag">
+          <div class="ag ag4">
             <div class="ac2 tot"><div class="ai">👑</div><div class="al">현재 보유 총 자산</div><div class="av" id="s-total">0 머니</div></div>
             <div class="ac2"><div class="ai" style="color:var(--blue);"><i class="fa-solid fa-credit-card"></i></div><div class="al">카드 (체크카드)</div><div class="av" style="color:var(--blue);" id="s-card">0 머니</div></div>
             <div class="ac2"><div class="ai" style="color:var(--green);"><i class="fa-solid fa-building-columns"></i></div><div class="al">은행 예금</div><div class="av" style="color:var(--green);" id="s-bank">0 머니</div></div>
+            <div class="ac2 ac-stock"><div class="ai"><i class="fa-solid fa-arrow-trend-up"></i></div><div class="al">주식 (지금 가격)</div><div class="av" id="s-stock">0 머니</div></div>
           </div>
           <div class="tx-tools"><button class="tx-asset-btn" id="s-asset-btn" style="display:none;" onclick="openAssetEdit('s')">💰 자산 수정 (선생님)</button></div>
           <table class="txt">

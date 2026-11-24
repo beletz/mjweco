@@ -29,7 +29,7 @@
     deleteWholesaleSale: '판매 기록 삭제', editWholesaleSaleMemo: '메모 수정', payWholesaleCorpTax: '법인세 납부',
     // 부동산·증권·아바타
     buyRealEstate: '부동산 구매', addRealEstate: '부동산 등록', buyLottery: '구매', tradeStock: '주식 거래', runStockStep: '가격 돌리기', setStockAuto: '자동으로 돌리기 설정', setStockSettings: '종목 설정 저장', addStockRequest: '신청',
-    buyAvatarItem: '아이템 구매', saveAvatar: '아바타 저장', setAvatarPrices: '가격 저장',
+    resetStockMarket: '증권회사 초기화', buyAvatarItem: '아이템 구매', saveAvatar: '아바타 저장', setAvatarPrices: '가격 저장',
     // 간식 신청
     requestSnack: '간식 신청', cancelSnackRequest: '간식 신청 취소', approveSnackRequest: '간식 승인', rejectSnackRequest: '간식 반려', setSnackMenu: '간식 메뉴 저장',
     // 숙제
@@ -37,9 +37,9 @@
     approveHomeworkReport: '숙제 승인', rejectHomeworkReport: '숙제 반려',
     // 국민 관리
     addStudent: '학생 추가', bulkCreateStudents: '학생 일괄 추가', updateStudent: '학생 정보 수정',
-    deleteStudent: '학생 삭제', bulkDeleteStudents: '학생 삭제', regenerateAllCodes: '접속 코드 새로 만들기',
+    deleteStudent: '학생 삭제', bulkDeleteStudents: '학생 삭제', bulkUpdateStudents: '학생 일괄 저장', regenerateAllCodes: '접속 코드 새로 만들기',
     // 기록·설정
-    deleteActivityLog: '기록 삭제', editActivityLogMemo: '메모 수정', editStudentTx: '기록 수정', deleteStudentTx: '기록 삭제', setStudentAssets: '자산 수정', resetClassEconomy: '경제 초기화',
+    deleteActivityLog: '기록 삭제', bulkDeleteActivityLogs: '기록 일괄 삭제', editActivityLogMemo: '메모 수정', editStudentTx: '기록 수정', deleteStudentTx: '기록 삭제', setStudentAssets: '자산 수정', resetClassEconomy: '경제 초기화',
     setSalaryTable: '급여표 저장', setBankSettings: '이자율 저장', setDepositCreditSettings: '설정 저장',
     setCreditGradeSettings: '설정 저장', setHomeworkCreditSettings: '설정 저장',
     // 은행 잔액 정리는 실제로 바꿀 때(두 번째 값이 true)만

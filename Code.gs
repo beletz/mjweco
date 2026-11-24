@@ -1482,9 +1482,9 @@ function buyLottery(classCode, studentNo, amount) {
 var STOCK_HISTORY_MAX = 150;         // 그래프에 남길 가격 개수 (전체 그래프용. 카드에는 최근 7일만 보임)
 var STOCK_AUTO_HOUR = 8, STOCK_AUTO_MIN = 45;
 var STOCK_DEFAULTS = [
-  { id: 'cookie', name: '달콤쿠키',     emoji: '🍪', sector: '과자·식품', price: 1000 },
-  { id: 'rocket', name: '별빛우주항공', emoji: '🚀', sector: '우주·과학', price: 2000 },
-  { id: 'game',   name: '픽셀게임즈',   emoji: '🎮', sector: '게임·놀이', price: 1500 }
+  { id: 'cookie', name: '달콤쿠키',     emoji: '🍪', sector: '과자·식품', price: 100 },
+  { id: 'rocket', name: '별빛우주항공', emoji: '🚀', sector: '우주·과학', price: 100 },
+  { id: 'game',   name: '픽셀게임즈',   emoji: '🎮', sector: '게임·놀이', price: 100 }
 ];
 var STOCK_NEWS_GOOD = ['{n}의 새 상품이 큰 인기를 끌었어요', '{n}이(가) 큰 계약을 따냈어요', '{n}의 이번 달 판매가 아주 좋았대요',
                        '{n}에 대한 좋은 소식이 퍼졌어요', '{n}이(가) 새 기술 개발에 성공했어요', '{n}의 손님이 크게 늘었어요'];
@@ -4561,5 +4561,120 @@ function cancelFineRequest(classCode, id, requester, silent) {
     if (String(f.v[6]) !== '대기') return { success: false, msg: '이미 ' + f.v[6] + '된 청구는 취소할 수 없어요.' };
     sheet.getRange(f.row, 7).setValue('취소'); sheet.getRange(f.row, 9).setValue(getTodayStr());
     return { success: true, msg: silent ? '' : f.v[3] + '의 벌금 청구를 취소했어요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// ==========================================
+// [증권] 처음으로 초기화 (선생님) — 모든 종목 가격을 STOCK_START_PRICE(100)로
+//  - 학생들이 가진 주식은 초기화 직전 가격으로 모두 팔아 카드로 돌려줌 (용돈기입장에 [주식 초기화] 매도 기록)
+//  - 종목 이름·업종·변동 폭·% 고정·자동 돌리기 설정은 그대로, 가격 기록·뉴스·변동 횟수는 처음부터
+// ==========================================
+var STOCK_START_PRICE = 100;
+function resetStockMarket(classCode, by) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode);
+    if (!cc) return { success: false, msg: '학급 코드가 없습니다.' };
+    var state = _stockLoad(cc), byId = {};
+    state.stocks.forEach(function (s) { byId[s.id] = s; });
+
+    // 1) 가진 주식을 지금 가격으로 팔아 카드로
+    var hSheet = getOrCreateStockHoldingsSheet(ss), hData = hSheet.getDataRange().getValues();
+    var stuSheet = getOrCreateStudentsSheet(ss), stuData = stuSheet.getDataRange().getValues();
+    var tSheet = getOrCreateTransSheet(ss), today = getTodayStr();
+    var rowOf = {}, cardOf = {};
+    for (var k = 1; k < stuData.length; k++) if (cleanText(stuData[k][0]) === cc) { var no = cleanText(String(stuData[k][1])); rowOf[no] = k + 1; cardOf[no] = Number(stuData[k][4]) || 0; }
+    var paidTo = {}, total = 0, delRows = [];
+    for (var i = 1; i < hData.length; i++) {
+      if (cleanText(hData[i][0]) !== cc) continue;
+      delRows.push(i + 1);
+      var sno = cleanText(String(hData[i][1])), qty = Number(hData[i][3]) || 0, s = byId[String(hData[i][2])];
+      if (qty <= 0 || !s || !rowOf[sno]) continue;
+      var value = qty * s.price;
+      cardOf[sno] += value; total += value; paidTo[sno] = (paidTo[sno] || 0) + value;
+      tSheet.appendRow([today, cc, sno, '[주식 초기화] ' + s.emoji + ' ' + s.name + ' ' + qty + '주 매도 (1주 ' + s.price.toLocaleString() + ')', value, '', cardOf[sno], '주식매도']);
+    }
+    Object.keys(paidTo).forEach(function (no) { stuSheet.getRange(rowOf[no], 5).setValue(cardOf[no]); });
+    for (var d = delRows.length - 1; d >= 0; d--) hSheet.deleteRow(delRows[d]);
+
+    // 2) 가격을 처음으로
+    var now = Date.now();
+    state.stocks.forEach(function (s) { s.price = STOCK_START_PRICE; s.history = [STOCK_START_PRICE]; s.historyAt = [now]; s.lastPct = 0; });
+    state.news = []; state.round = 0; state.lastRunAt = now; state.lastRunBy = '초기화' + (by ? ' (' + by + ')' : '');
+    if (state.auto) state.nextAutoAt = _stockNextAutoAt(now);
+    _stockSave(cc, state);
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+
+    var n = Object.keys(paidTo).length;
+    return { success: true, refunded: n, total: total,
+             msg: '증권회사를 처음으로 초기화했어요! 모든 종목이 ' + STOCK_START_PRICE + ' 머니에서 다시 시작해요.' +
+                  (n ? '\n가지고 있던 주식은 ' + n + '명에게 모두 팔아 카드로 ' + total.toLocaleString() + ' 머니를 돌려줬어요.' : '\n주식을 가진 학생은 없었어요.') };
+  } catch (e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ==========================================
+// [전체 로그] 체크한 기록 한 번에 삭제 (선생님)
+//  items: [{rowNo, sno, memo}] — 그사이 기록이 바뀌어 번호가 어긋나면 그 기록은 건너뜀
+//  하나씩 지울 때(deleteActivityLog)처럼 그 거래만큼 카드 잔액을 되돌림
+// ==========================================
+function bulkDeleteActivityLogs(classCode, itemsJson) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var items = typeof itemsJson === 'string' ? JSON.parse(itemsJson || '[]') : (itemsJson || []);
+    if (!Array.isArray(items) || !items.length) return { success: false, msg: '지울 기록을 골라 주세요.' };
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode);
+    var tSheet = getOrCreateTransSheet(ss), tData = tSheet.getDataRange().getValues();
+    var stuSheet = getOrCreateStudentsSheet(ss), stuData = stuSheet.getDataRange().getValues();
+    var stuRow = {}, card = {};
+    for (var k = 1; k < stuData.length; k++) if (cleanText(stuData[k][0]) === cc) { var no = cleanText(String(stuData[k][1])); stuRow[no] = k + 1; card[no] = Number(stuData[k][4]) || 0; }
+    var rows = [], skipped = 0, seen = {}, changed = {};
+    items.forEach(function (it) {
+      var rn = parseInt(it && it.rowNo);
+      if (!(rn >= 1 && rn < tData.length) || seen[rn]) { skipped++; return; }
+      var row = tData[rn];
+      if (cleanText(row[1]) !== cc || cleanText(String(row[2])) !== cleanText(String(it.sno)) || String(row[3] || '') !== String(it.memo == null ? '' : it.memo)) { skipped++; return; }
+      seen[rn] = 1; rows.push(rn);
+      var sno = cleanText(String(row[2])), net = (Number(row[4]) || 0) - (Number(row[5]) || 0);
+      if (net && stuRow[sno]) { card[sno] -= net; changed[sno] = 1; }
+    });
+    if (!rows.length) return { success: false, msg: '지울 수 있는 기록이 없어요. 새로고침한 뒤 다시 골라 주세요.' };
+    Object.keys(changed).forEach(function (no) { stuSheet.getRange(stuRow[no], 5).setValue(card[no]); });
+    rows.sort(function (a, b) { return b - a; }).forEach(function (rn) { tSheet.deleteRow(rn + 1); });
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    return { success: true, deleted: rows.length, skipped: skipped,
+             msg: rows.length + '개 기록을 지웠어요.' + (Object.keys(changed).length ? ' 학생 ' + Object.keys(changed).length + '명의 카드 잔액을 되돌렸어요.' : '') +
+                  (skipped ? '\n(' + skipped + '개는 그사이 바뀌어 건너뛰었어요.)' : '') };
+  } catch (e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ==========================================
+// [국민 관리] 체크한 학생들의 이름·직업·접속코드를 한 번에 저장
+//  items: [{sno, name, job, code}]  (code가 비었으면 코드는 그대로)
+// ==========================================
+function bulkUpdateStudents(classCode, itemsJson) {
+  try {
+    var items = typeof itemsJson === 'string' ? JSON.parse(itemsJson || '[]') : (itemsJson || []);
+    if (!Array.isArray(items) || !items.length) return { success: false, msg: '저장할 학생을 골라 주세요.' };
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode);
+    var sheet = getOrCreateStudentsSheet(ss), data = sheet.getDataRange().getValues();
+    var rowOf = {};
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) rowOf[cleanText(String(data[i][1]))] = i;
+    var saved = 0, bad = [];
+    items.forEach(function (it) {
+      var sno = cleanText(String(it && it.sno)), r = rowOf[sno];
+      if (r === undefined) { bad.push(sno + '번(학생 없음)'); return; }
+      var code = cleanText(String(it.code || '')).toUpperCase();
+      if (code && code.length < 4) { bad.push(sno + '번(코드는 4자리 이상)'); return; }
+      sheet.getRange(r + 1, 3, 1, 2).setValues([[String(it.name || ''), String(it.job || '')]]);
+      if (code) sheet.getRange(r + 1, 8).setValue(code);
+      saved++;
+    });
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    if (!saved) return { success: false, msg: '저장하지 못했어요.\n' + bad.join(', ') };
+    return { success: true, saved: saved, msg: saved + '명의 정보를 저장했어요.' + (bad.length ? '\n저장하지 못한 학생: ' + bad.join(', ') : '') };
   } catch (e) { return { success: false, msg: e.message }; }
 }
