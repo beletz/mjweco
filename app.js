@@ -2029,14 +2029,14 @@ function renderCreditMgrGrid(list){
     var gradeColor = s.credit>=80?'#10B981':s.credit>=60?'#3B82F6':s.credit>=40?'#F59E0B':'#EF4444';
     var gradeBg    = s.credit>=80?'#ECFDF5':s.credit>=60?'#EFF6FF':s.credit>=40?'#FFFBEB':'#FFF5F5';
 
-    h += '<div style="background:white;border:1.5px solid #E2E8F0;border-radius:18px;padding:20px;box-shadow:0 3px 12px rgba(0,0,0,0.05);position:relative;overflow:hidden;font-family:Pretendard,sans-serif;">';
+    var rejected = pendingStatus==='반려';
+    h += '<div class="cmgr-card'+(hasPending?(rejected?' cmgr-rej':' cmgr-wait'):'')+'" style="background:white;border:1.5px solid #E2E8F0;border-radius:18px;padding:20px;box-shadow:0 3px 12px rgba(0,0,0,0.05);position:relative;font-family:Pretendard,sans-serif;">';
 
-    // 대기/반려 배지 (상단 바)
+    // 대기/반려 표시 — 오른쪽 위 동그라미, 위아래로 통통 (theme.css .cmgr-pend)
     if(hasPending){
-      var badgeBg   = pendingStatus==='반려' ? '#EF4444' : '#F59E0B';
-      var badgeText = (pendingDelta>0?'+':'')+pendingDelta+'점 '+(pendingStatus==='반려'?'반려됨 — 재보고 대기중':'대기중');
-      h += '<div style="position:absolute;top:0;left:0;right:0;background:'+badgeBg+';color:white;text-align:center;font-size:12px;font-weight:700;padding:6px;letter-spacing:0.3px;">⏳ '+badgeText+'</div>';
-      h += '<div style="margin-top:26px;"></div>';
+      var full = (pendingDelta>0?'+':'')+pendingDelta+'점 '+(rejected?'반려됨 — 다시 보고해야 해요':'대통령 보고 대기중');
+      h += '<div class="cmgr-pend'+(rejected?' rej':'')+'" data-key="'+esc(sno+'|'+pendingDelta+'|'+pendingStatus)+'" title="'+esc(full)+'">'+
+           '<b>'+(pendingDelta>0?'+':'')+pendingDelta+'</b><small>'+(rejected?'반려':'대기')+'</small></div>';
     }
 
     // 학생 정보
@@ -2076,7 +2076,16 @@ function renderCreditMgrGrid(list){
     h += '</div>';
   });
   grid.innerHTML = h;
+  // 새로 생기거나 바뀐 대기 동그라미만 '톡' 튀어나오게
+  var seen = {};
+  grid.querySelectorAll('.cmgr-pend').forEach(function(el){
+    var k = el.getAttribute('data-key'); seen[k] = 1;
+    if(_cmgrPendSeen[k] || !window.anime || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+    anime({ targets: el, scale: [0.2, 1], rotate: [-20, 0], duration: 700, easing: 'easeOutElastic(1, .5)', complete: function(){ el.style.transform=''; } });
+  });
+  _cmgrPendSeen = seen;
 }
+var _cmgrPendSeen = {};
 
 function adjustCreditInput(inputId, delta){
   var el=$(inputId); if(!el) return;

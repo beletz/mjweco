@@ -864,3 +864,20 @@ h1,h2,h3,.brand,.st,.dash-tile h3{ letter-spacing:-.01em; }
 .dash-tile:has(.tile-badge[style*="inline-block"]) .tile-dot{display:none}
 @keyframes badgeBob{0%,100%{translate:0 0}50%{translate:0 -5px}}
 @media (prefers-reduced-motion:reduce){.mh-badge,.tile-badge{animation:none}}
+
+/* ==========================================================================
+   신용등급관리위원회 — 대기/반려 점수: 오른쪽 위 동그라미, 위아래로 통통 (app.js renderCreditMgrGrid)
+   ========================================================================== */
+.cmgr-card{transition:border-color .2s, box-shadow .2s}
+.cmgr-card.cmgr-wait{border-color:#FCD34D !important;box-shadow:0 0 0 3px rgba(245,158,11,.12),0 3px 12px rgba(0,0,0,.05) !important}
+.cmgr-card.cmgr-rej{border-color:#FCA5A5 !important;box-shadow:0 0 0 3px rgba(239,68,68,.12),0 3px 12px rgba(0,0,0,.05) !important}
+.cmgr-pend{position:absolute;top:-14px;right:-12px;z-index:3;width:62px;height:62px;border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;
+  background:#F59E0B;color:#fff;border:3px solid #fff;
+  box-shadow:0 6px 16px -4px rgba(245,158,11,.65);animation:badgeBob 1.6s ease-in-out infinite}
+.cmgr-pend b{font-size:21px}
+.cmgr-pend small{font-size:12px;margin-top:3px;opacity:.95}
+.cmgr-pend.rej{background:#EF4444;box-shadow:0 6px 16px -4px rgba(239,68,68,.65)}
+#credit-mgr-grid{padding-top:14px;row-gap:28px}
+@media (prefers-reduced-motion:reduce){.cmgr-pend{animation:none}}
+.cmgr-pend b,.cmgr-pend small{color:#fff !important}
