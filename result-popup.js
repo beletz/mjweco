@@ -19,7 +19,7 @@
     createDeposit: '예금 가입', createDepositByBankerWithCredit: '예금 가입', redeemDeposit: '예금 해지', redeemDepositByBanker: '예금 해지',
     cancelDepositByBanker: '예금 중도 해지', deleteDepositByBanker: '예금 삭제', editDepositByBanker: '예금 수정',
     // 국고
-    addTreasuryRecord: '국고 기록', editTreasuryRecord: '국고 기록 수정', deleteTreasuryRecord: '국고 기록 삭제',
+    addTreasuryRecord: '국고 기록', editTreasuryRecord: '국고 기록 수정', deleteTreasuryRecord: '국고 기록 삭제', setTreasuryMenu: '국고 메뉴 저장',
     approveTreasuryRecord: '국고 승인', rejectTreasuryRecord: '국고 반려',
     // 신용
     adjustCredit: '신용점수 조정', adjustCreditBulk: '신용점수 일괄 조정', savePendingCredit: '신용점수 저장',

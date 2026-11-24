@@ -1150,29 +1150,36 @@ function addTreasuryRecord(classCode, studentNo, date, memo, type, amount) {
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
-function editTreasuryRecord(classCode, rowNo, date, memo, type, amount) {
+// byTeacher=true(교사·마스터 계정)이면 승인된 기록도 수정 가능. 교사가 고친 기록은 승인 상태를 그대로 유지
+function editTreasuryRecord(classCode, rowNo, date, memo, type, amount, byTeacher) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = getOrCreateTreasurySheet(ss);
     var data = sheet.getDataRange().getValues();
     var cc = cleanText(classCode), rn = parseInt(rowNo);
+    var teacher = byTeacher === true;
     if (rn<1||rn>=data.length) return { success: false, msg: "기록을 찾을 수 없습니다." };
     if (cleanText(data[rn][0])!==cc) return { success: false, msg: "접근 권한이 없습니다." };
-    if (String(data[rn][5])==='승인') return { success: false, msg: "승인된 기록은 수정할 수 없습니다." };
+    if (String(data[rn][5])==='승인' && !teacher) return { success: false, msg: "승인된 기록은 선생님만 수정할 수 있습니다." };
     var amt = parseInt(amount);
     if (isNaN(amt)||amt<=0) return { success: false, msg: "금액을 올바르게 입력해 주세요." };
+    if (type!=='수입'&&type!=='지출') return { success: false, msg: "구분을 선택해 주세요." };
+    var text = String(memo||'').trim();
+    if (!text) return { success: false, msg: "내용을 입력해 주세요." };
     sheet.getRange(rn+1,2).setValue(date);
-    sheet.getRange(rn+1,3).setValue(cleanText(memo));
+    sheet.getRange(rn+1,3).setValue(text);
     sheet.getRange(rn+1,4).setValue(type);
     sheet.getRange(rn+1,5).setValue(amt);
-    sheet.getRange(rn+1,6).setValue('대기');
-    sheet.getRange(rn+1,8).setValue('');
+    if (!teacher) {
+      sheet.getRange(rn+1,6).setValue('대기');
+      sheet.getRange(rn+1,8).setValue('');
+    }
     SpreadsheetApp.flush();
-    return { success: true, msg: "수정 완료. 교사 승인이 다시 필요합니다." };
+    return { success: true, msg: teacher ? "수정 완료! 국고에 바로 반영됩니다." : "수정 완료. 교사 승인이 다시 필요합니다." };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
-function deleteTreasuryRecord(classCode, rowNo) {
+function deleteTreasuryRecord(classCode, rowNo, byTeacher) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = getOrCreateTreasurySheet(ss);
@@ -1180,11 +1187,63 @@ function deleteTreasuryRecord(classCode, rowNo) {
     var cc = cleanText(classCode), rn = parseInt(rowNo);
     if (rn<1||rn>=data.length) return { success: false, msg: "기록을 찾을 수 없습니다." };
     if (cleanText(data[rn][0])!==cc) return { success: false, msg: "접근 권한이 없습니다." };
-    if (String(data[rn][5])==='승인') return { success: false, msg: "승인된 기록은 삭제할 수 없습니다." };
+    if (String(data[rn][5])==='승인' && byTeacher !== true) return { success: false, msg: "승인된 기록은 선생님만 삭제할 수 있습니다." };
     sheet.deleteRow(rn+1);
     SpreadsheetApp.flush();
     return { success: true, msg: "삭제 완료" };
   } catch(e) { return { success: false, msg: e.message }; }
+}
+
+// ==========================================
+// [국고 메뉴] 국고로 할 수 있는 것들 (선생님이 마스터 → 국고 승인에서 적음, 국세청 화면에서 보여 줌)
+// TreasuryMenu: [0]학급코드 [1]메뉴(JSON 배열: {name, price, desc})
+// ==========================================
+function getTreasuryMenu(classCode) {
+  try {
+    var cc = cleanText(classCode);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('TreasuryMenu');
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (cleanText(data[i][0]) === cc) {
+          var list = [];
+          try { list = JSON.parse(String(data[i][1] || '[]')); } catch (pe) { list = []; }
+          return { success: true, list: Array.isArray(list) ? list : [] };
+        }
+      }
+    }
+    return { success: true, list: [] };
+  } catch(e) { return { success: false, msg: e.message }; }
+}
+
+function setTreasuryMenu(classCode, menuJson) {
+  try {
+    var cc = cleanText(classCode);
+    if (!cc) return { success: false, msg: "학급 코드가 없습니다. 다시 로그인해 주세요." };
+    var raw = typeof menuJson === 'string' ? JSON.parse(menuJson || '[]') : (menuJson || []);
+    if (!Array.isArray(raw)) return { success: false, msg: "메뉴 형식이 올바르지 않습니다." };
+    var list = [];
+    raw.forEach(function (m) {
+      var name = String((m && m.name) || '').trim().slice(0, 40);
+      if (!name) return;
+      var price = parseInt(m.price);
+      list.push({ name: name, price: isNaN(price) || price < 0 ? 0 : price, desc: String(m.desc || '').trim().slice(0, 100) });
+    });
+    if (list.length > 50) return { success: false, msg: "국고 메뉴는 50개까지 적을 수 있습니다." };
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('TreasuryMenu');
+    if (!sheet) { sheet = ss.insertSheet('TreasuryMenu'); sheet.appendRow(['학급코드','메뉴']); }
+    var data = sheet.getDataRange().getValues();
+    var json = JSON.stringify(list);
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) === cc) {
+        sheet.getRange(i + 1, 2).setValue(json);
+        return { success: true, list: list, msg: "국고 메뉴 " + list.length + "개를 저장했습니다!" };
+      }
+    }
+    sheet.appendRow([cc, json]);
+    return { success: true, list: list, msg: "국고 메뉴 " + list.length + "개를 저장했습니다!" };
+  } catch(e) { return { success: false, msg: "오류: " + e.message }; }
 }
 
 function approveTreasuryRecord(classCode, rowNo) {

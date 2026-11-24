@@ -581,3 +581,13 @@ body{ letter-spacing:0; }
 h1,h2,h3,.brand,.st,.dash-tile h3{ letter-spacing:-.01em; }
 /* 아주 작은 글씨는 주아체가 답답해 보여서 살짝 키움 */
 .av-rare,.mh-badge,.teacher-bdg{ font-size:13px; }
+
+/* ── 국고 메뉴 편집 줄 (마스터 → 국고 승인) ── */
+.tm-row{display:grid;grid-template-columns:minmax(120px,1.2fr) 110px minmax(140px,2fr) 40px;gap:8px;margin-bottom:8px}
+.tm-row input{min-width:0;width:100%}
+.tm-head{font-size:13px;color:var(--text2,#64748B);margin-bottom:6px;padding:0 2px}
+@media (max-width:640px){
+  .tm-row{grid-template-columns:1fr 90px 40px;padding-bottom:8px;border-bottom:1px dashed #E2E8F0}
+  .tm-row .tm-desc{grid-column:1/-1;order:5}
+  .tm-head{display:none}
+}

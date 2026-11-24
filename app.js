@@ -234,7 +234,7 @@ function mdTab(panelId, tabEl){
   if(panelId==='md-credit-admin')      { creditAdminTab('report', $('cad-tab1')); }
   if(panelId==='md-stats')             { loadStats(); loadHomeworkCreditSettings(); }
   if(panelId==='md-wallet')            { refreshTeacherSel(); }
-  if(panelId==='md-treasury-approval') { loadTeacherTreasury(); }
+  if(panelId==='md-treasury-approval') { loadTeacherTreasury(); loadTreasuryMenuEditor(); }
   if(panelId==='md-fulllog'){ loadFullLog(); }
 
   refreshMasterPendingBadges(); // ★ 탭 전환마다 결재 대기 배지 갱신
@@ -2705,6 +2705,95 @@ function taxOfficeTab(panelId, el){
   $(panelId).classList.add('act');
   if(panelId==='tof-treasury') loadTaxOfficeDashboard();
   if(panelId==='tof-tax') loadTaxStatsStu();
+  if(panelId==='tof-menu') loadTreasuryMenuView();
+}
+
+// ── 국고 메뉴 (선생님이 마스터 → 국고 승인에서 적고, 국세청 화면에서 보여 줌) ──
+var _tmenuRows = [];
+function _tmenuCC(){ return _adminCC || _cc; }
+
+function loadTreasuryMenuView(){
+  var box=$('tmenu-view'); if(!box) return;
+  box.innerHTML='<div class="empty-msg">불러오는 중...</div>';
+  google.script.run.withSuccessHandler(function(r){
+    var list=(r&&r.success&&r.list)||[];
+    if(!list.length){
+      box.innerHTML='<div style="text-align:center;padding:50px;color:#94A3B8;"><div style="font-size:44px;margin-bottom:10px;">📜</div>아직 국고 메뉴가 없어요.<br>선생님이 메뉴를 적으면 여기에 보여요.</div>';
+      return;
+    }
+    var colors=['#F59E0B','#10B981','#3B82F6','#EF4444','#06B6D4','#F97316'];
+    var h='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;">';
+    list.forEach(function(m,i){
+      var c=colors[i%colors.length];
+      h+='<div class="tmenu-card" style="background:#fff;border:1.5px solid #E2E8F0;border-top:5px solid '+c+';border-radius:16px;padding:18px;box-shadow:0 3px 12px rgba(0,0,0,0.05);">';
+      h+='<div style="font-family:Jua,sans-serif;font-size:20px;color:#1E293B;margin-bottom:6px;">'+esc(m.name)+'</div>';
+      if(Number(m.price)>0) h+='<div style="font-family:Jua,sans-serif;font-size:24px;color:'+c+';margin-bottom:6px;">'+Number(m.price).toLocaleString()+' 머니</div>';
+      if(m.desc) h+='<div style="font-size:14px;color:#64748B;line-height:1.5;">'+esc(m.desc)+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+    box.innerHTML=h;
+    if(typeof salMotion==='function') salMotion(box.querySelectorAll('.tmenu-card'), 12);
+  }).withFailureHandler(function(err){ box.innerHTML='<div class="empty-msg">불러오지 못했어요: '+esc(err.message)+'</div>'; })
+  .getTreasuryMenu(_cc||_adminCC);
+}
+
+function loadTreasuryMenuEditor(){
+  var box=$('tmenu-editor'); if(!box) return;
+  google.script.run.withSuccessHandler(function(r){
+    _tmenuRows=((r&&r.success&&r.list)||[]).map(function(m){ return {name:m.name||'',price:m.price||'',desc:m.desc||''}; });
+    if(!_tmenuRows.length) _tmenuRows.push({name:'',price:'',desc:''});
+    renderTreasuryMenuEditor();
+  }).getTreasuryMenu(_tmenuCC());
+}
+
+function _tmenuCollect(){
+  _tmenuRows=_tmenuRows.map(function(_,i){
+    return { name:(($('tm-name-'+i)||{}).value||'').trim(), price:(($('tm-price-'+i)||{}).value||''), desc:(($('tm-desc-'+i)||{}).value||'').trim() };
+  });
+}
+
+function renderTreasuryMenuEditor(){
+  var box=$('tmenu-editor'); if(!box) return;
+  var inp='padding:9px 11px;border:2px solid #E2E8F0;border-radius:10px;font-size:15px;font-family:inherit;outline:none;min-width:0;box-sizing:border-box;';
+  var h='<div class="tm-row tm-head"><div>메뉴 이름</div><div>금액 (머니)</div><div>설명</div><div></div></div>';
+  _tmenuRows.forEach(function(m,i){
+    h+='<div class="tm-row">';
+    h+='<input id="tm-name-'+i+'" maxlength="40" placeholder="예: 학급 파티" value="'+esc(m.name)+'" style="'+inp+'">';
+    h+='<input id="tm-price-'+i+'" type="number" min="0" placeholder="금액" value="'+esc(m.price)+'" style="'+inp+'">';
+    h+='<input id="tm-desc-'+i+'" class="tm-desc" maxlength="100" placeholder="설명 (예: 국고가 모이면 다 같이 파티)" value="'+esc(m.desc)+'" style="'+inp+'">';
+    h+='<button onclick="removeTreasuryMenuRow('+i+')" title="이 줄 지우기" style="background:#FFF5F5;color:#EF4444;border:1.5px solid #FECACA;border-radius:10px;cursor:pointer;font-size:14px;">✕</button>';
+    h+='</div>';
+  });
+  box.innerHTML=h;
+}
+
+function addTreasuryMenuRow(){
+  _tmenuCollect();
+  _tmenuRows.push({name:'',price:'',desc:''});
+  renderTreasuryMenuEditor();
+  var el=$('tm-name-'+(_tmenuRows.length-1)); if(el) el.focus();
+}
+
+function removeTreasuryMenuRow(i){
+  _tmenuCollect();
+  _tmenuRows.splice(i,1);
+  if(!_tmenuRows.length) _tmenuRows.push({name:'',price:'',desc:''});
+  renderTreasuryMenuEditor();
+}
+
+function saveTreasuryMenu(){
+  _tmenuCollect();
+  var list=_tmenuRows.filter(function(m){ return m.name; });
+  var noName=_tmenuRows.filter(function(m){ return !m.name && (m.price!==''||m.desc); }).length;
+  if(noName) return alert('메뉴 이름이 비어 있는 줄이 '+noName+'개 있어요. 이름을 적거나 ✕로 지워 주세요.');
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    hideLoading();
+    showToast(r&&r.success?'✅ '+r.msg:'⚠️ '+((r&&r.msg)||'저장하지 못했습니다.'));
+    if(r&&r.success) loadTreasuryMenuEditor();
+  }).withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
+  .setTreasuryMenu(_tmenuCC(), JSON.stringify(list));
 }
 
 function loadTaxOfficeDashboard(){
@@ -2837,14 +2926,14 @@ function renderTreasuryList(list){
 
     // 버튼
     h += '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px dashed #E2E8F0;padding-top:12px;">';
-    h += '  <div style="font-size:12px;color:#94A3B8;">등록: '+esc(d.registeredBy||'-')+'번</div>';
+    h += '  <div style="font-size:12px;color:#94A3B8;">등록: '+esc(trRegLabel(d.registeredBy))+'</div>';
     h += '  <div style="display:flex;gap:7px;align-items:center;">';
     if(_isTeacher && isPending){
       h += '<button onclick="approveRecordUI('+d.rowNo+')" style="background:#10B981;color:white;border:none;padding:7px 14px;font-size:13px;font-weight:700;border-radius:9px;cursor:pointer;font-family:Pretendard,sans-serif;">✅ 승인</button>';
       h += '<button onclick="rejectRecordUI('+d.rowNo+')" style="background:#EF4444;color:white;border:none;padding:7px 14px;font-size:13px;font-weight:700;border-radius:9px;cursor:pointer;font-family:Pretendard,sans-serif;">❌ 반려</button>';
     }
-    if(!isApproved){
-      h += '<button onclick="editTreasuryUI('+d.rowNo+',\''+esc(d.date)+'\',\''+esc(d.memo)+'\',\''+d.type+'\','+d.amount+')" style="background:#F8FAFC;color:#64748B;border:1.5px solid #E2E8F0;padding:7px 12px;font-size:14px;border-radius:9px;cursor:pointer;">✏️</button>';
+    if(!isApproved || _isTeacher){
+      h += '<button onclick="editTreasuryByRow('+d.rowNo+')" title="수정" style="background:#F8FAFC;color:#64748B;border:1.5px solid #E2E8F0;padding:7px 12px;font-size:14px;border-radius:9px;cursor:pointer;">✏️</button>';
       h += '<button onclick="deleteTreasuryUI('+d.rowNo+')" style="background:#FFF5F5;color:#EF4444;border:1.5px solid #FECACA;padding:7px 12px;font-size:14px;border-radius:9px;cursor:pointer;">🗑️</button>';
     } else {
       h += '<span style="font-size:11px;color:#94A3B8;">수정/삭제 불가</span>';
@@ -2855,7 +2944,25 @@ function renderTreasuryList(list){
   container.innerHTML = h;
 }
 
-function editTreasuryUI(rowNo, date, memo, type, amount){
+// 등록자 표시: 학생 번호면 "3번", 아니면(교사 등) 그대로
+function trRegLabel(v){ v=String(v==null?'':v).trim(); if(!v) return '-'; return /^\d+$/.test(v) ? v+'번' : v; }
+
+// 기록 번호로 찾아서 수정 창 열기 (내용에 따옴표가 있어도 안전)
+function editTreasuryByRow(rowNo){
+  var all=(_allTreasuryList||[]).concat(typeof _allTeacherTreasuryList!=='undefined'?(_allTeacherTreasuryList||[]):[]);
+  var d=all.find(function(x){ return String(x.rowNo)===String(rowNo); });
+  if(!d) return alert('기록을 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.');
+  editTreasuryUI(d.rowNo, d.date, d.memo, d.type, d.amount, d.status);
+}
+
+// 국고 기록을 바꾼 뒤 열려 있는 화면(국세청 / 마스터 국고 승인)을 모두 새로 고침
+function refreshTreasuryViews(){
+  if($('treasury-records-container')) loadTaxOfficeDashboard();
+  if($('teacher-treasury-container') && _isTeacher) loadTeacherTreasury();
+  if(typeof refreshMasterPendingBadges==='function' && _isTeacher) refreshMasterPendingBadges();
+}
+
+function editTreasuryUI(rowNo, date, memo, type, amount, status){
   if(!$('treasury-edit-modal')){
     var m = document.createElement('div');
     m.id = 'treasury-edit-modal';
@@ -2873,7 +2980,7 @@ function editTreasuryUI(rowNo, date, memo, type, amount){
         '<div style="margin-bottom:20px;"><label style="font-size:13px;font-weight:700;color:#475569;display:block;margin-bottom:6px;">금액 (머니)</label>'+
         '<input id="te-amt" type="number" min="1" style="width:100%;padding:12px;border:2px solid #E2E8F0;border-radius:10px;font-size:14px;font-family:Pretendard,sans-serif;outline:none;box-sizing:border-box;"></div>'+
         '<input type="hidden" id="te-row-no">'+
-        '<div style="background:#FEF3C7;border-radius:10px;padding:11px 15px;margin-bottom:20px;font-size:13px;color:#D97706;">⚠️ 수정 후 교사 승인이 다시 필요합니다.</div>'+
+        '<div id="te-warn" style="background:#FEF3C7;border-radius:10px;padding:11px 15px;margin-bottom:20px;font-size:13px;color:#D97706;">⚠️ 수정 후 교사 승인이 다시 필요합니다.</div>'+
         '<div style="display:flex;gap:10px;">'+
           '<button onclick="submitTreasuryEdit()" style="flex:1;background:#7C3AED;color:white;border:none;padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:Pretendard,sans-serif;">💾 저장</button>'+
           '<button onclick="closeTreasuryEditModal()" style="flex:1;background:#F1F5F9;color:#64748B;border:none;padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:Pretendard,sans-serif;">취소</button>'+
@@ -2886,6 +2993,9 @@ function editTreasuryUI(rowNo, date, memo, type, amount){
   $('te-type').value   = type;
   $('te-amt').value    = amount;
   $('te-row-no').value = rowNo;
+  $('te-warn').textContent = _isTeacher
+    ? '👑 선생님이 고친 내용은 승인 없이 국고에 바로 반영됩니다.'+(status==='승인'?' (승인된 기록입니다)':'')
+    : '⚠️ 수정 후 교사 승인이 다시 필요합니다.';
   $('treasury-edit-modal').style.display = 'flex';
 }
 
@@ -2901,24 +3011,28 @@ function submitTreasuryEdit(){
     .withSuccessHandler(function(r){
       hideLoading(); closeTreasuryEditModal();
       showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);
-      if(r.success) loadTaxOfficeDashboard();
+      if(r.success) refreshTreasuryViews();
     })
     .withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
-    .editTreasuryRecord(targetCC, rowNo, date, memo, type, amt);
+    .editTreasuryRecord(targetCC, rowNo, date, memo, type, amt, _isTeacher===true);
 }
 
 function deleteTreasuryUI(rowNo){
-  if(!confirm('이 국고 기록을 삭제하시겠습니까?')) return;
+  var all=(_allTreasuryList||[]).concat(typeof _allTeacherTreasuryList!=='undefined'?(_allTeacherTreasuryList||[]):[]);
+  var d=all.find(function(x){ return String(x.rowNo)===String(rowNo); });
+  var what = d ? '\n\n'+d.date+' · '+d.memo+' · '+(d.type==='수입'?'+':'-')+Number(d.amount).toLocaleString()+' 머니' : '';
+  var extra = d && d.status==='승인' ? '\n\n승인된 기록이라 지우면 국고 잔액도 그만큼 바뀝니다.' : '';
+  if(!confirm('이 국고 기록을 삭제하시겠습니까?'+what+extra)) return;
   var targetCC = _cc || _adminCC;
   showLoading();
   google.script.run
     .withSuccessHandler(function(r){
       hideLoading();
       showToast(r.success?'🗑️ 삭제 완료':'⚠️ '+r.msg);
-      if(r.success) loadTaxOfficeDashboard();
+      if(r.success) refreshTreasuryViews();
     })
     .withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
-    .deleteTreasuryRecord(targetCC, rowNo);
+    .deleteTreasuryRecord(targetCC, rowNo, _isTeacher===true);
 }
 
 function approveRecordUI(rowNo){
@@ -3009,7 +3123,7 @@ function renderTeacherTreasuryList(list){
     h += '      <span style="background:'+statusBg+';color:'+statusC+';font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;">'+statusLbl+'</span>';
     h += '    </div>';
     h += '    <div style="font-family:Jua,sans-serif;font-size:18px;color:#1E293B;margin-bottom:3px;">'+esc(d.memo)+'</div>';
-    h += '    <div style="font-size:12px;color:#94A3B8;">등록: '+esc(d.registeredBy||'-')+'번 &nbsp;|&nbsp; '+(isIncome?'📈 수입':'📉 지출')+'</div>';
+    h += '    <div style="font-size:12px;color:#94A3B8;">등록: '+esc(trRegLabel(d.registeredBy))+' &nbsp;|&nbsp; '+(isIncome?'📈 수입':'📉 지출')+'</div>';
     h += '  </div>';
     h += '  <div style="display:flex;align-items:center;gap:10px;">';
     h += '    <div style="text-align:right;">';
@@ -3020,6 +3134,9 @@ function renderTeacherTreasuryList(list){
       h += '    <button onclick="approveRecordUI('+d.rowNo+')" style="background:#10B981;color:white;border:none;padding:8px 14px;font-size:13px;font-weight:700;border-radius:9px;cursor:pointer;font-family:Pretendard,sans-serif;white-space:nowrap;">✅ 승인</button>';
       h += '    <button onclick="rejectRecordUI('+d.rowNo+')" style="background:#EF4444;color:white;border:none;padding:8px 14px;font-size:13px;font-weight:700;border-radius:9px;cursor:pointer;font-family:Pretendard,sans-serif;white-space:nowrap;">❌ 반려</button>';
     }
+    // 교사는 승인된 기록도 수정·삭제 가능
+    h += '    <button onclick="editTreasuryByRow('+d.rowNo+')" title="수정" style="background:#F8FAFC;color:#64748B;border:1.5px solid #E2E8F0;padding:7px 11px;font-size:14px;border-radius:9px;cursor:pointer;">✏️</button>';
+    h += '    <button onclick="deleteTreasuryUI('+d.rowNo+')" title="삭제" style="background:#FFF5F5;color:#EF4444;border:1.5px solid #FECACA;padding:7px 11px;font-size:14px;border-radius:9px;cursor:pointer;">🗑️</button>';
     h += '  </div>';
     h += '</div></div>';
   });

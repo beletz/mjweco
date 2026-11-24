@@ -768,6 +768,17 @@
   </div>
   <div class="sc">
     <div class="st">
+      <i class="fa-solid fa-scroll" style="color:var(--orange);"></i> 국고 메뉴 적기
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button class="btn btn-outline btn-sm" onclick="addTreasuryMenuRow()"><i class="fa-solid fa-plus"></i> 줄 추가</button>
+        <button class="btn btn-green btn-sm" onclick="saveTreasuryMenu()"><i class="fa-solid fa-floppy-disk"></i> 저장</button>
+      </div>
+    </div>
+    <div class="info-box">💡 국고로 무엇을 할 수 있는지 적어 주세요. 국세청 화면의 <b>📜 국고 메뉴</b> 탭에 그대로 보입니다. (예: 학급 파티 · 3000 · 국고가 3000 모이면 열어요)</div>
+    <div id="tmenu-editor"><div class="empty-msg">불러오는 중...</div></div>
+  </div>
+  <div class="sc">
+    <div class="st">
       <i class="fa-solid fa-clipboard-check" style="color:var(--red);"></i> 국고 기록 승인 관리
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
         <select id="teacher-treasury-filter" onchange="filterTeacherTreasury()"
@@ -1315,6 +1326,7 @@
   <div style="padding:24px 5%;">
     <div id="tof-tabs" class="panel-tabs" style="margin-bottom:22px;">
       <div class="panel-tab act" onclick="taxOfficeTab('tof-treasury',this)">🏛️ 국고 관리</div>
+      <div class="panel-tab" onclick="taxOfficeTab('tof-menu',this)">📜 국고 메뉴</div>
       <div class="panel-tab" onclick="taxOfficeTab('tof-tax',this)">🧾 세금 부과</div>
     </div>
     <div id="tof-panels">
@@ -1374,6 +1386,13 @@
             <div id="treasury-records-container" style="flex:1;overflow-y:auto;max-height:600px;padding-right:4px;"></div>
           </div>
         </div>
+      </div>
+      <div id="tof-menu" class="panel-content">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+          <div style="font-family:'Jua',sans-serif;font-size:22px;color:#1E293B;">📜 국고 메뉴</div>
+          <div style="font-size:14px;color:#64748B;">국고로 할 수 있는 것들이에요. 메뉴는 선생님이 정해요.</div>
+        </div>
+        <div id="tmenu-view"><div class="empty-msg">불러오는 중...</div></div>
       </div>
       <div id="tof-tax" class="panel-content">
         <div style="display:grid;grid-template-columns:340px 1fr;gap:18px;">
