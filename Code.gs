@@ -2393,6 +2393,21 @@ function deleteWholesaleItem(classCode, studentNo, rowNo) {
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
+// ★ 도매상 인플레이션: 구매자 카드 잔액이 5,000 이상이면 정가의 1.5배로 판매
+//   여러 개를 살 때는 한 개씩 차례로 계산 → 사고 나서 5,000 아래로 내려가면 다음 물건부터 정가
+//   예) 카드 5,200 / 300짜리 2개 → 1개째 450(1.5배), 남은 4,750 → 2개째 300(정가) = 750
+var WS_INFLATION_LINE = 5000;
+var WS_INFLATION_RATE = 1.5;
+function calcWholesaleInflation(card, price, qty) {
+  var bal = Number(card) || 0, total = 0, inflated = 0;
+  for (var u = 0; u < qty; u++) {
+    var p = price;
+    if (bal >= WS_INFLATION_LINE) { p = Math.round(price * WS_INFLATION_RATE); inflated++; }
+    total += p; bal -= p;
+  }
+  return { total: total, inflated: inflated };
+}
+
 function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, quantity) {
   var lock = LockService.getScriptLock();
   try {
@@ -2433,7 +2448,13 @@ function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, 
       }
     }
     if (buyerRowIdx === -1) return { success: false, msg: '구매자를 찾을 수 없습니다.' };
-    if (buyerCard < total)  return { success: false, msg: '구매자 카드 잔액이 부족합니다. (보유: ' + buyerCard + ' 머니)' };
+
+    // ★ 인플레이션 적용 (카드 5,000 이상일 때 1.5배)
+    var infl = calcWholesaleInflation(buyerCard, price, qty);
+    total = infl.total;
+    var inflNote = infl.inflated > 0 ? ' (인플레이션 1.5배 ' + infl.inflated + '개)' : '';
+
+    if (buyerCard < total)  return { success: false, msg: '구매자 카드 잔액이 부족합니다. (보유: ' + buyerCard + ' 머니, 필요: ' + total + ' 머니)' };
 
     // ── 판매자 조회 (학생 판매자일 때만) ──
     var sellerRowIdx = -1, sellerCard = 0;
@@ -2476,7 +2497,7 @@ function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, 
     var newBuyerCard = buyerCard - total;
     stuSheet.getRange(buyerRowIdx, 5).setValue(newBuyerCard);
     tSheet.appendRow([today, cc, buyerSno,
-      '[도매상] ' + itemName + ' ' + qty + '개 구매 (통장이체)',
+      '[도매상] ' + itemName + ' ' + qty + '개 구매 (통장이체)' + inflNote,
       '', total, newBuyerCard, '도매구매']);
 
     // ── ★ 판매자 카드 지급 (학생 판매자일 때만, 구매자 업데이트와 별도) ──
@@ -2485,7 +2506,7 @@ function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, 
       newSellerCard = sellerCard + total;
       stuSheet.getRange(sellerRowIdx, 5).setValue(newSellerCard);
       tSheet.appendRow([today, cc, sellerSno,
-        '[도매상] ' + itemName + ' ' + qty + '개 판매 (통장이체)',
+        '[도매상] ' + itemName + ' ' + qty + '개 판매 (통장이체)' + inflNote,
         total, '', newSellerCard, '도매판매']);
     }
 
@@ -2507,8 +2528,9 @@ function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, 
     SpreadsheetApp.flush();
     return {
   success: true,
-  msg: buyerName + '님 카드에서 ' + total.toLocaleString() + ' 머니 차감 완료!',
+  msg: buyerName + '님 카드에서 ' + total.toLocaleString() + ' 머니 차감 완료!' + inflNote,
   total: total,
+  inflated: infl.inflated,
   newSellerCard: newSellerCard
 };
 

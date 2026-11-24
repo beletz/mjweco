@@ -3695,6 +3695,28 @@ function openWsBuyerSelect(){
   renderWsBuyerList(_stuList);
   if($('ws-buyer-search')) $('ws-buyer-search').value='';
   $('ws-buyer-modal').style.display='flex';
+  // 카드 잔액이 최신이어야 인플레이션 가격을 맞게 보여 줄 수 있으므로 명단을 새로 받아 옴
+  google.script.run.withSuccessHandler(function(r){
+    if(r && r.success){ _stuList=r.list; filterWsBuyers(); }
+  }).getStudentList(_cc||_adminCC);
+}
+
+// ★ 도매상 인플레이션 (Code.gs calcWholesaleInflation 과 같은 계산)
+//   카드 잔액 5,000 이상이면 정가의 1.5배. 한 개씩 차례로 계산해서 5,000 아래로 내려가면 다음 물건부터 정가
+var WS_INFLATION_LINE=5000, WS_INFLATION_RATE=1.5;
+function calcWsInflation(card, price, qty){
+  var bal=Number(card)||0, total=0, inflated=0;
+  for(var u=0;u<qty;u++){
+    var p=price;
+    if(bal>=WS_INFLATION_LINE){ p=Math.round(price*WS_INFLATION_RATE); inflated++; }
+    total+=p; bal-=p;
+  }
+  return {total:total, inflated:inflated};
+}
+function wsBuyerCard(){
+  var sno=String(($('ws-buyer-no')||{}).value||'');
+  var s=sno&&_stuList.find(function(x){ return String(x.studentNo)===sno; });
+  return s?(Number(s.card)||0):null;
 }
 function closeWsBuyerModal(){ var m=$('ws-buyer-modal'); if(m) m.style.display='none'; }
 
@@ -3724,6 +3746,7 @@ function filterWsBuyers(){
 function selectWsBuyer(sno, name){
   if($('ws-buyer-no')) $('ws-buyer-no').value=sno;
   if($('ws-buyer-label')){ $('ws-buyer-label').textContent=sno+'번 '+name; $('ws-buyer-label').style.color='#1E293B'; }
+  calcWsTotal();
   closeWsBuyerModal();
 }
 
@@ -3783,8 +3806,19 @@ function selectWsItem(name, price, stock){
 function calcWsTotal(){
   var price=parseInt(($('ws-sale-item-price')||{}).value)||0;
   var qty  =parseInt(($('ws-qty')||{}).value)||0;
-  var total=price*qty;
+  var card=wsBuyerCard();
+  var infl=card===null?{total:price*qty,inflated:0}:calcWsInflation(card,price,qty);
+  var total=infl.total;
   if($('ws-total-label')) $('ws-total-label').textContent=total>0?total.toLocaleString()+' 머니':'- 머니';
+  var note=$('ws-infl-note');
+  if(note){
+    if(total>0 && infl.inflated>0){
+      note.innerHTML='📈 <b>인플레이션 적용</b> · 구매자 카드 잔액 '+card.toLocaleString()+' 머니 (5,000 머니 이상)<br>'+
+        infl.inflated+'개는 정가의 1.5배('+Math.round(price*WS_INFLATION_RATE).toLocaleString()+' 머니)'+
+        (infl.inflated<qty?', 나머지 '+(qty-infl.inflated)+'개는 정가('+price.toLocaleString()+' 머니)':'')+'로 계산했어요.';
+      note.style.display='block';
+    } else note.style.display='none';
+  }
 }
 
 // ── 판매 저장 ──
@@ -3802,7 +3836,10 @@ function doWsSale(){
   if(qty <= 0)   return alert('수량을 입력해 주세요.');
   if(!unitPrice) return alert('상품 가격이 올바르지 않습니다. 물건을 다시 선택해 주세요.');
 
-  var total      = unitPrice * qty;
+  var card       = wsBuyerCard();
+  var infl       = card===null ? {total:unitPrice*qty, inflated:0} : calcWsInflation(card, unitPrice, qty);
+  var total      = infl.total;
+  var inflLine   = infl.inflated>0 ? '\n📈 인플레이션: '+infl.inflated+'개는 1.5배 가격 (카드 5,000 머니 이상)' : '';
   var buyerLabel = ($('ws-buyer-label')||{}).textContent || '';
   var sellerLabel= targetSno ? targetSno+'번' : '교사(마스터)';
 
@@ -3810,7 +3847,7 @@ function doWsSale(){
     '[판매 확인]\n\n판매자: '+sellerLabel+
     '\n구매자: '+buyerLabel+
     '\n상품: '+itemName+' × '+qty+'개'+
-    '\n금액: '+total.toLocaleString()+' 머니'+
+    '\n금액: '+total.toLocaleString()+' 머니'+inflLine+
     '\n결제: 통장이체\n\n진행하시겠습니까?'
   )) return;
 
@@ -3828,6 +3865,7 @@ function doWsSale(){
         if($('ws-unit-price-label'))$('ws-unit-price-label').textContent='-';
         if($('ws-qty'))             $('ws-qty').value='1';
         if($('ws-total-label'))     $('ws-total-label').textContent='- 머니';
+        if($('ws-infl-note'))       $('ws-infl-note').style.display='none';
         loadWsSales();
         loadWsItems();
       }
