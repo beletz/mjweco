@@ -4159,24 +4159,33 @@ function getSnackRequests(classCode, studentNo) {
                   price: Number(data[i][5]) || 0, qty: Number(data[i][6]) || 0, total: Number(data[i][7]) || 0,
                   memo: String(data[i][8] || ''), status: st,
                   date: d instanceof Date ? Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(d || ''),
-                  note: String(data[i][12] || '') });
+                  note: String(data[i][12] || ''), custom: String(data[i][13] || '') === 'Y' });
     }
     list.reverse();
     return { success: true, list: list.slice(0, 200), pending: pending };
   } catch (e) { return { success: false, msg: e.message }; }
 }
 
-function requestSnack(classCode, studentNo, itemName, qty, memo) {
+// isCustom이 true면 메뉴에 없는 간식을 직접 적어 신청 (customPrice: 1개 가격, 모르면 0 → 선생님이 승인할 때 정함)
+function requestSnack(classCode, studentNo, itemName, qty, memo, customPrice, isCustom) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo));
     if (!cc || sno === '') return { success: false, msg: '로그인 정보가 없습니다. 다시 로그인해 주세요.' };
     var n = parseInt(qty);
     if (isNaN(n) || n < 1 || n > 20) return { success: false, msg: '수량은 1개에서 20개 사이로 적어 주세요.' };
-    var name = String(itemName || '').trim();
-    var item = null;
-    _snackMenuOf(cc).forEach(function (m) { if (m.name === name) item = m; });
-    if (!item) return { success: false, msg: '간식 메뉴에 없는 간식입니다. 화면을 새로고침해 주세요.' };
+    var name = String(itemName == null ? '' : itemName).trim();
+    var item = null, custom = isCustom === true;
+    if (custom) {
+      if (!name) return { success: false, msg: '신청할 간식 이름을 적어 주세요.' };
+      if (name.length > 30) return { success: false, msg: '간식 이름은 30자 이내로 적어 주세요.' };
+      var cp = customPrice === '' || customPrice == null ? 0 : parseInt(customPrice);
+      if (isNaN(cp) || cp < 0) return { success: false, msg: '가격은 0 이상의 숫자로 적어 주세요. 모르면 비워 두세요.' };
+      item = { name: name, price: cp };
+    } else {
+      _snackMenuOf(cc).forEach(function (m) { if (m.name === name) item = m; });
+      if (!item) return { success: false, msg: '간식 메뉴에 없는 간식입니다. 화면을 새로고침해 주세요.' };
+    }
     var stuData = getOrCreateStudentsSheet(ss).getDataRange().getValues();
     var stuName = null, card = 0;
     for (var k = 1; k < stuData.length; k++) {
@@ -4190,7 +4199,8 @@ function requestSnack(classCode, studentNo, itemName, qty, memo) {
     }
     if (card < waiting + total) return { success: false, msg: '카드 잔액이 부족해요.\n카드: ' + card.toLocaleString() + ' 머니\n이번 신청: ' + total.toLocaleString() + ' 머니' + (waiting ? '\n이미 기다리는 신청: ' + waiting.toLocaleString() + ' 머니' : '') };
     var id = 'SN_' + new Date().getTime() + '_' + Math.floor(Math.random() * 1000);
-    sheet.appendRow([cc, id, sno, stuName, item.name, item.price, n, total, String(memo || '').trim().slice(0, 60), '대기', getTodayStr(), '', '']);
+    sheet.appendRow([cc, id, sno, stuName, item.name, item.price, n, total, String(memo || '').trim().slice(0, 60), '대기', getTodayStr(), '', '', custom ? 'Y' : '']);
+    if (custom && !total) return { success: true, msg: item.name + ' ' + n + '개를 신청했어요! 가격은 선생님이 승인할 때 정해요.' };
     return { success: true, msg: item.name + ' ' + n + '개를 신청했어요! 선생님이 승인하면 카드에서 ' + total.toLocaleString() + ' 머니가 빠져요.' };
   } catch (e) { return { success: false, msg: e.message }; }
 }
@@ -4214,7 +4224,8 @@ function cancelSnackRequest(classCode, studentNo, reqId) {
 }
 
 // 선생님 승인: 이때 카드에서 돈이 빠짐
-function approveSnackRequest(classCode, reqId) {
+// unitPrice: 직접 적어 신청한 간식일 때 선생님이 정한 1개 가격 (메뉴 간식은 무시)
+function approveSnackRequest(classCode, reqId, unitPrice) {
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(5000);
@@ -4223,6 +4234,12 @@ function approveSnackRequest(classCode, reqId) {
     if (!f) return { success: false, msg: '신청을 찾을 수 없습니다.' };
     if (String(f.v[9]) !== '대기') return { success: false, msg: '이미 ' + f.v[9] + '된 신청입니다.' };
     var sno = cleanText(String(f.v[2])), total = Number(f.v[7]) || 0;
+    if (String(f.v[13] || '') === 'Y' && unitPrice !== undefined && unitPrice !== null && unitPrice !== '') {
+      var up = parseInt(unitPrice);
+      if (isNaN(up) || up < 0) return { success: false, msg: '가격은 0 이상의 숫자로 적어 주세요.' };
+      total = up * (Number(f.v[6]) || 0);
+      sheet.getRange(f.row, 6).setValue(up); sheet.getRange(f.row, 8).setValue(total);
+    }
     var stuSheet = getOrCreateStudentsSheet(ss), stuData = stuSheet.getDataRange().getValues(), row = -1, card = 0;
     for (var k = 1; k < stuData.length; k++) {
       if (cleanText(stuData[k][0]) === cc && cleanText(String(stuData[k][1])) === sno) { row = k + 1; card = Number(stuData[k][4]) || 0; break; }

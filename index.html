@@ -244,6 +244,18 @@
         <div class="tile-dot"></div><div class="tile-icon" style="background:var(--indigo);"><i class="fa-solid fa-wallet"></i></div>
         <h3>용돈기입장</h3><p>학생별 거래내역 조회·기록</p>
       </div>
+      <div class="dash-tile" onclick="mdTab('md-treasury-approval',document.querySelector('.mh-tab[onclick*=&quot;md-treasury-approval&quot;]'))">
+        <div class="tile-dot"></div><div class="tile-icon" style="background:var(--yellow);"><i class="fa-solid fa-landmark"></i></div>
+        <h3>국고 승인</h3><p>국고 기록 승인·국고 메뉴</p>
+      </div>
+      <div class="dash-tile" onclick="mdTab('md-stock-admin',document.querySelector('.mh-tab[onclick*=&quot;md-stock-admin&quot;]'))">
+        <div class="tile-dot"></div><div class="tile-icon" style="background:var(--red);"><i class="fa-solid fa-arrow-trend-up"></i></div>
+        <h3>증권회사</h3><p>주식 가격 돌리기·종목 설정</p>
+      </div>
+      <div class="dash-tile" onclick="mdTab('md-fulllog',document.querySelector('.mh-tab[onclick*=&quot;md-fulllog&quot;]'))">
+        <div class="tile-dot"></div><div class="tile-icon" style="background:var(--slate);"><i class="fa-solid fa-clipboard-list"></i></div>
+        <h3>전체 로그</h3><p>학급 전체 거래 기록</p>
+      </div>
     </div>
   </div>
   
@@ -1046,6 +1058,18 @@
           </div>
           <div class="info-box">🍪 먹고 싶은 간식을 골라 <b>신청</b>하세요. 선생님이 <b>승인</b>하면 그때 카드에서 돈이 빠지고 용돈기입장에 기록돼요.</div>
           <div id="wt-snack-menu" class="wt-snack-grid"></div>
+          <div class="wt-custom">
+            <div class="wt-custom-title">✏️ 메뉴에 없는 간식, 직접 적어서 신청하기</div>
+            <div class="wt-custom-row">
+              <label class="wt-f wt-f-name"><span>간식 이름</span><input id="wt-cs-name" maxlength="30" placeholder="예: 바나나우유"></label>
+              <label class="wt-f wt-f-qty"><span>수량</span><input id="wt-cs-qty" type="number" min="1" max="20" value="1"></label>
+              <label class="wt-f wt-f-price"><span>1개 가격 (모르면 비워 두기)</span><input id="wt-cs-price" type="number" min="0" placeholder="선생님이 정해요"></label>
+            </div>
+            <div class="wt-custom-row">
+              <label class="wt-f wt-f-memo"><span>선생님께 남길 말</span><input id="wt-cs-memo" maxlength="60" placeholder="예: 생일이라 친구들과 나눠 먹고 싶어요"></label>
+              <button class="wt-custom-btn" id="wt-cs-btn" onclick="snackCustomRequest()"><i class="fa-solid fa-paper-plane"></i> 신청하기</button>
+            </div>
+          </div>
           <div class="wt-sub" style="margin-top:20px;"><span>🧾 나의 신청 내역</span></div>
           <div id="wt-snack-mine"></div>
         </div>

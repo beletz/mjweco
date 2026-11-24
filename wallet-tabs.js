@@ -134,7 +134,7 @@
   function renderSnackMenu() {
     var box = $('wt-snack-menu');
     if (!snackMenu.length) {
-      box.innerHTML = empty('🍪', '아직 간식 메뉴가 없어요.<br>' + (teacher() ? '위의 "간식 메뉴 적기"에서 메뉴를 적어 주세요.' : '선생님이 메뉴를 적으면 여기에 보여요.'));
+      box.innerHTML = empty('🍪', '아직 간식 메뉴가 없어요.<br>' + (teacher() ? '위의 "간식 메뉴 적기"에서 메뉴를 적어 주세요.' : '아래에 먹고 싶은 간식을 직접 적어 신청할 수 있어요.'));
       return;
     }
     var can = !!target();
@@ -155,10 +155,12 @@
   function reqRow(x, mode) {
     var c = ST_CLASS[x.status] || 'none';
     var h = '<div class="wt-row"><div class="wt-row-main">';
-    h += '<div class="wt-row-title">' + (mode === 'all' ? '<span class="no-bdg">' + E(x.studentNo) + '번</span> ' + E(x.name) + ' · ' : '') + E(x.item) + ' ' + x.qty + '개</div>';
-    h += '<div class="wt-row-sub">📅 ' + E(x.date) + ' · ' + won(x.total) + (x.memo ? ' · 💬 ' + E(x.memo) : '') + (x.note ? ' · 반려 이유: ' + E(x.note) : '') + '</div></div>';
+    var priceTxt = (x.custom && !x.total && x.status === '대기') ? '가격은 선생님이 정해요' : won(x.total);
+    h += '<div class="wt-row-title">' + (mode === 'all' ? '<span class="no-bdg">' + E(x.studentNo) + '번</span> ' + E(x.name) + ' · ' : '') + E(x.item) + ' ' + x.qty + '개' +
+      (x.custom ? ' <span class="wt-tag orange">✏️ 직접 신청</span>' : '') + '</div>';
+    h += '<div class="wt-row-sub">📅 ' + E(x.date) + ' · ' + priceTxt + (x.memo ? ' · 💬 ' + E(x.memo) : '') + (x.note ? ' · 반려 이유: ' + E(x.note) : '') + '</div></div>';
     if (mode === 'all' && x.status === '대기') {
-      h += '<div class="wt-btns"><button class="wt-ok" onclick="snackApprove(\'' + E(x.id) + '\')">승인</button><button class="wt-no" onclick="snackReject(\'' + E(x.id) + '\')">반려</button></div>';
+      h += '<div class="wt-btns"><button class="wt-ok" onclick="snackApprove(\'' + E(x.id) + '\',' + (x.custom ? 1 : 0) + ',' + x.qty + ',' + x.price + ')">승인</button><button class="wt-no" onclick="snackReject(\'' + E(x.id) + '\')">반려</button></div>';
     } else if (mode === 'mine' && x.status === '대기') {
       h += '<span class="wt-st wait">⏳ 대기</span><button class="wt-no" onclick="snackCancel(\'' + E(x.id) + '\')">취소</button>';
     } else {
@@ -228,8 +230,17 @@
     }).withFailureHandler(function () {}).getStudentList(cc());
   }
 
-  window.snackApprove = function (id) {
-    if (!confirm('이 간식 신청을 승인할까요?\n학생 카드에서 돈이 빠지고 용돈기입장에 기록돼요.')) return;
+  window.snackApprove = function (id, custom, qty, price) {
+    var unit = null;
+    if (custom) {
+      // 직접 적어 신청한 간식은 선생님이 1개 가격을 정함 (학생이 적은 가격이 있으면 미리 채워 둠)
+      var v = prompt('[직접 신청한 간식 승인]\n\n1개 가격을 정해 주세요. (' + qty + '개를 신청했어요)\n0을 적으면 무료로 줘요.', price ? String(price) : '');
+      if (v === null) return;
+      v = String(v).trim();
+      if (v === '' || isNaN(parseInt(v)) || parseInt(v) < 0) return alert('가격은 0 이상의 숫자로 적어 주세요.');
+      unit = parseInt(v);
+      if (!confirm('1개 ' + won(unit) + ' × ' + qty + '개 = ' + won(unit * qty) + '\n학생 카드에서 빠지고 용돈기입장에 기록돼요. 승인할까요?')) return;
+    } else if (!confirm('이 간식 신청을 승인할까요?\n학생 카드에서 돈이 빠지고 용돈기입장에 기록돼요.')) return;
     if (typeof showLoading === 'function') showLoading();
     google.script.run.withSuccessHandler(function (r) {
       if (typeof hideLoading === 'function') hideLoading();
@@ -239,7 +250,34 @@
     }).withFailureHandler(function (e) {
       if (typeof hideLoading === 'function') hideLoading();
       alert('오류: ' + e.message);
-    }).approveSnackRequest(cc(), id);
+    }).approveSnackRequest(cc(), id, unit);
+  };
+
+  // 메뉴에 없는 간식 직접 적어서 신청
+  window.snackCustomRequest = function () {
+    var sno = target();
+    if (!sno) return alert('학생을 선택해 주세요.');
+    var name = ($('wt-cs-name').value || '').trim();
+    var qty = parseInt($('wt-cs-qty').value) || 0;
+    var ps = ($('wt-cs-price').value || '').trim();
+    var memo = ($('wt-cs-memo').value || '').trim();
+    if (!name) { $('wt-cs-name').focus(); return alert('신청할 간식 이름을 적어 주세요.'); }
+    if (qty < 1 || qty > 20) return alert('수량은 1개에서 20개 사이로 적어 주세요.');
+    if (ps !== '' && (isNaN(parseInt(ps)) || parseInt(ps) < 0)) return alert('가격은 0 이상의 숫자로 적어 주세요. 모르면 비워 두세요.');
+    var price = ps === '' ? 0 : parseInt(ps);
+    if (!confirm('[간식 직접 신청]\n\n' + name + ' ' + qty + '개\n' + (price ? '예상 금액: ' + won(price * qty) : '가격: 선생님이 정해요') +
+      (memo ? '\n남길 말: ' + memo : '') + '\n\n선생님이 승인하면 카드에서 돈이 빠져요. 신청할까요?')) return;
+    if (typeof showLoading === 'function') showLoading();
+    google.script.run.withSuccessHandler(function (r) {
+      if (typeof hideLoading === 'function') hideLoading();
+      if (!r || !r.success) return alert((r && r.msg) || '신청하지 못했어요.');
+      if (typeof showToast === 'function') showToast('🍪 ' + r.msg);
+      $('wt-cs-name').value = ''; $('wt-cs-qty').value = 1; $('wt-cs-price').value = ''; $('wt-cs-memo').value = '';
+      loadSnackMine(); if (teacher()) loadSnackAll(); refreshSnackBadge();
+    }).withFailureHandler(function (e) {
+      if (typeof hideLoading === 'function') hideLoading();
+      alert('오류: ' + e.message);
+    }).requestSnack(cc(), sno, name, qty, memo, price, true);
   };
 
   window.snackReject = function (id) {
