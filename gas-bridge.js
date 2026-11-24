@@ -437,7 +437,25 @@
     return JSON.parse(JSON.stringify(v));
   }
 
+  // Firebase가 끝내 응답하지 않을 때 화면이 영원히 기다리지 않도록 시간 제한
+  var SERVER_TIMEOUT_MS = 40000;
+  function TimeoutError(name) {
+    this.name = 'TimeoutError';
+    this.message = '서버 응답이 ' + (SERVER_TIMEOUT_MS / 1000) + '초 넘게 없습니다(' + name + ').\n' +
+      '인터넷 연결을 확인해 주세요. 돈을 주거나 빼는 작업이었다면, 다시 누르기 전에 국민 관리에서 잔액이 이미 바뀌었는지 먼저 확인해 주세요.';
+  }
+  function withTimeout(p, name) {
+    return new Promise(function (ok, no) {
+      var timer = setTimeout(function () { no(new TimeoutError(name)); }, SERVER_TIMEOUT_MS);
+      p.then(function (v) { clearTimeout(timer); ok(v); }, function (e) { clearTimeout(timer); no(e); });
+    });
+  }
+
   function callServer(name, rawArgs) {
+    return withTimeout(callServerInner(name, rawArgs), name);
+  }
+
+  function callServerInner(name, rawArgs) {
     return Promise.all([backend.ready, codeReady]).then(function (r) {
       var fn = resolveFn(r[1], name);
       var args = rawArgs.map(function (a) { return a === undefined ? null : plain(a); });
@@ -468,7 +486,8 @@
 
   function friendlyError(e) {
     var msg = (e && e.message) || String(e);
-    if (/permission|insufficient/i.test(msg)) msg = 'Firebase 권한 오류입니다. Firestore 보안 규칙과 익명 로그인 설정을 확인하세요. (' + msg + ')';
+    if (e && e.name === 'TimeoutError') { /* 안내문 그대로 */ }
+    else if (/permission|insufficient/i.test(msg)) msg = 'Firebase 권한 오류입니다. Firestore 보안 규칙과 익명 로그인 설정을 확인하세요. (' + msg + ')';
     else if (/offline|unavailable|network|Failed to fetch/i.test(msg)) msg = '인터넷 연결이 불안정합니다. 잠시 후 다시 시도해 주세요. (' + msg + ')';
     else if (/aborted|contention|too much/i.test(msg)) msg = '🚦 현재 처리량이 많습니다. 2~3초 뒤에 다시 시도해주세요.';
     var err = new Error(msg); err.original = e; return err;
@@ -486,17 +505,25 @@
         if (typeof prop !== 'string' || prop === 'then') return undefined;
         return function () {
           var args = Array.prototype.slice.call(arguments);
+          var t0 = Date.now();
+          function showFatal(prefix, x) {
+            console.error('[서버 함수 ' + prop + '] ' + prefix, x);
+            if (typeof window.hideLoading === 'function') { try { window.hideLoading(); } catch (y) {} }
+            alert('⚠️ ' + prefix + '\n\n' + ((x && x.message) || x));
+          }
           callServer(prop, args).then(function (res) {
-            if (onOk) onOk(res, userObj);
+            console.info('[서버 함수 ' + prop + '] 완료 (' + (Date.now() - t0) + 'ms)');
+            // 화면 쪽 처리에서 오류가 나도 조용히 묻히지 않게
+            try { if (onOk) onOk(res, userObj); }
+            catch (x) { showFatal('결과를 화면에 표시하다가 오류가 났습니다.', x); }
           }, function (e) {
             var err = friendlyError(e);
-            console.error('[서버 함수 ' + prop + ' 오류]', e);
-            if (onFail) onFail(err, userObj);
-            else {
-              if (typeof window.hideLoading === 'function') { try { window.hideLoading(); } catch (x) {} }
-              alert('오류: ' + err.message);
-            }
-          });
+            console.error('[서버 함수 ' + prop + ' 오류] (' + (Date.now() - t0) + 'ms)', e);
+            try {
+              if (onFail) onFail(err, userObj);
+              else showFatal('오류', err);
+            } catch (x) { showFatal('오류 안내를 표시하다가 또 오류가 났습니다.', x); }
+          }).catch(function (x) { showFatal('알 수 없는 오류가 났습니다.', x); });
         };
       }
     });

@@ -3377,8 +3377,9 @@ function executeSmartPayrollUI(){
     .withSuccessHandler(function(r){
       hideLoading(); if(btn) btn.disabled=false;
       if(!r || !r.success){ alert('⚠️ 지급하지 못했습니다.\n\n'+((r&&r.msg)||'알 수 없는 오류')); return; }
-      showToast('✅ '+r.msg);
-      payrollDoneFlash();
+      showToast('✅ '+r.msg, 4000);
+      try { payrollDoneFlash(); } catch(e) { console.warn(e); }
+      setTimeout(function(){ alert('✅ 급여 지급 완료!\n\n'+preview+'\n\n'+r.msg+'\n국민 관리에서 카드 잔액을 확인할 수 있어요.'); }, 60);
       loadList();
       if(_teacherAcc && payroll.some(function(p){ return isTeacherSno(p.studentNo); }))
         ensureTeacherAccountFor(_adminCC);   // 선생님(0번) 잔액 화면도 새로고침
