@@ -208,6 +208,7 @@
       <div class="mh-tab" onclick="mdTab('md-stats',this)">📊 통계<span id="mh-badge-stats" class="mh-badge" style="display:none;">0</span></div>
       <div class="mh-tab" onclick="mdTab('md-wallet',this)">💰 용돈기입장</div>
       <div class="mh-tab" onclick="mdTab('md-treasury-approval',this)">🏛️ 국고 승인<span id="mh-badge-treasury" class="mh-badge" style="display:none;">0</span></div>
+      <div class="mh-tab" onclick="mdTab('md-police',this)">🚓 경찰서<span id="mh-badge-police" class="mh-badge" style="display:none;">0</span></div>
       <div class="mh-tab" onclick="mdTab('md-stock-admin',this)">📈 증권회사</div>
       <div class="mh-tab" onclick="mdTab('md-fulllog',this)">📋 전체 로그</div>
     </div>
@@ -250,6 +251,11 @@
         <span class="tile-badge" id="tile-badge-treasury" style="display:none;" title="국고 승인 대기"></span>
         <div class="tile-dot"></div><div class="tile-icon" style="background:var(--yellow);"><i class="fa-solid fa-landmark"></i></div>
         <h3>국고 승인</h3><p>국고 기록 승인·국고 메뉴</p>
+      </div>
+      <div class="dash-tile" onclick="mdTab('md-police',document.querySelector('.mh-tab[onclick*=&quot;md-police&quot;]'))">
+        <span class="tile-badge" id="tile-badge-police" style="display:none;" title="벌금 결재 대기"></span>
+        <div class="tile-dot"></div><div class="tile-icon" style="background:var(--slate);"><i class="fa-solid fa-shield-halved"></i></div>
+        <h3>경찰서</h3><p>벌금 결재(승인·반려)</p>
       </div>
       <div class="dash-tile" onclick="mdTab('md-stock-admin',document.querySelector('.mh-tab[onclick*=&quot;md-stock-admin&quot;]'))">
         <div class="tile-dot"></div><div class="tile-icon" style="background:var(--red);"><i class="fa-solid fa-arrow-trend-up"></i></div>
@@ -775,6 +781,19 @@
       </div>
     </div>
   </div>
+  <!-- POLICE PANEL (마스터 → 경찰서: 벌금 결재) -->
+  <div class="md-panel" id="md-police">
+    <div class="sc">
+      <div class="st"><i class="fa-solid fa-gavel" style="color:var(--red);"></i> 벌금 결재 대기 <span class="pill" id="pa-wait-cnt" style="margin-left:6px;">0건</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadPoliceAdmin()"><i class="fa-solid fa-rotate-right"></i> 새로고침</button></div>
+      <div class="info-box">🚓 경찰서장이 청구한 벌금이에요. <b>승인</b>하면 그때 학생 카드에서 벌금이 빠지고 신용점수가 <b>-5점</b> 깎여요. <b>반려</b>하면 돈과 신용점수는 그대로예요.</div>
+      <div id="pa-wait"><div class="empty-msg">불러오는 중...</div></div>
+    </div>
+    <div class="sc">
+      <div class="st"><i class="fa-solid fa-clock-rotate-left" style="color:var(--slate);"></i> 처리한 청구 (최근 30개)</div>
+      <div id="pa-done"></div>
+    </div>
+  </div>
   <!-- TREASURY APPROVAL PANEL -->
 <div class="md-panel" id="md-treasury-approval">
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
@@ -1291,7 +1310,7 @@
     <div style="display:grid;grid-template-columns:340px 1fr;gap:18px;">
       <div class="sc">
         <div class="st"><i class="fa-solid fa-gavel" style="color:var(--red);"></i> 벌금 부과</div>
-        <div class="info-box">💡 벌금 부과 시 신용점수가 자동으로 -5점 감점됩니다.</div>
+        <div class="info-box" id="fine-info">💡 벌금 부과를 누르면 <b>대통령(선생님)에게 결재가 청구</b>돼요. 대통령이 <b>승인하면</b> 그때 벌금이 빠지고 신용점수가 <b>-5점</b> 깎여요.</div>
         <div class="ig"><label>대상 학생</label>
           <select id="fine-stu" class="ci" style="margin-bottom:0;"><option value="">-- 학생 선택 --</option></select>
         </div>
@@ -1300,11 +1319,22 @@
         </div>
         <input class="ci" id="fine-reason-custom" placeholder="위반 사유 직접 입력" style="display:none;margin-top:8px;">
         <div class="amr" style="margin-top:11px;"><input class="ci" id="fine-amt" type="number" placeholder="벌금 금액" min="1" style="margin-bottom:0;"><span class="ul">머니</span></div>
-        <button class="sb sb-red" style="margin-top:14px;" onclick="doFine()"><i class="fa-solid fa-gavel"></i> 벌금 부과</button>
+        <button class="sb sb-red" style="margin-top:14px;" onclick="doFine()"><i class="fa-solid fa-gavel"></i> <span id="fine-btn-label">벌금 부과 (대통령 결재 청구)</span></button>
+      </div>
+      <div>
+      <div class="sc">
+  <div class="st">
+    <i class="fa-solid fa-paper-plane" style="color:var(--orange);"></i> 대통령 결재 청구 현황
+    <span class="pill" id="fine-req-cnt" style="margin-left:6px;">0건 대기</span>
+    <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadFineRequestsMine()">
+      <i class="fa-solid fa-rotate-right"></i> 새로고침
+    </button>
+  </div>
+  <div id="fine-req-list"><div class="empty-msg">불러오는 중...</div></div>
       </div>
       <div class="sc">
   <div class="st">
-    <i class="fa-solid fa-scroll" style="color:var(--gray);"></i> 최근 벌금 내역
+    <i class="fa-solid fa-scroll" style="color:var(--gray);"></i> 최근 벌금 내역 <span style="font-size:13px;color:var(--gray);font-weight:600;">(결재가 끝나 실제로 부과된 벌금)</span>
     <span class="pill" id="fine-log-cnt" style="margin-left:6px;">0건</span>
     <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadFineLog()">
       <i class="fa-solid fa-rotate-right"></i> 새로고침
@@ -1328,6 +1358,7 @@
     </table>
   </div>
 </div><!-- ★ 추가: 두 번째 .sc(최근 벌금 내역) 블록을 닫는 div -->
+      </div><!-- /오른쪽 칸 (결재 청구 현황 + 최근 벌금 내역) -->
 </div><!-- /grid -->
     </div><!-- /pol-fine -->
     </div><!-- /pol-panels -->

@@ -237,6 +237,7 @@ function mdTab(panelId, tabEl){
   if(panelId==='md-treasury-approval') { loadTeacherTreasury(); loadTreasuryMenuEditor(); }
   if(panelId==='md-fulllog'){ loadFullLog(); }
   if(panelId==='md-stock-admin'){ if(typeof loadStockAdmin==='function') loadStockAdmin(); }
+  if(panelId==='md-police'){ loadPoliceAdmin(); }
 
   refreshMasterPendingBadges(); // ★ 탭 전환마다 결재 대기 배지 갱신
 }
@@ -267,6 +268,8 @@ function refreshMasterPendingBadges(){
       setPendingBadge('treasury', r.treasury);
       setPendingBadge('credit', r.credit);
       setPendingBadge('stats', r.stats);
+      setPendingBadge('police', r.police||0);
+      if((r.police||0)>0 && $('md-police') && $('md-police').classList.contains('act')) loadPoliceAdmin();
     })
     .withFailureHandler(function(){})
     .getMasterPendingBadgeCounts(targetCC);
@@ -281,7 +284,7 @@ function startBadgeWatch(cc){
   stopBadgeWatch();
   _badgeWatchCC=cc;
   var soon=function(){ clearTimeout(_badgeDebounce); _badgeDebounce=setTimeout(refreshMasterPendingBadges, 400); };
-  if(typeof ssmWatchSheets==='function') _badgeWatchStop=ssmWatchSheets(cc, ['Homework','Treasury','CreditPending'], soon);
+  if(typeof ssmWatchSheets==='function') _badgeWatchStop=ssmWatchSheets(cc, ['Homework','Treasury','CreditPending','FineRequests'], soon);
   _badgeTimer=setInterval(function(){ if(!document.hidden && _isTeacher) refreshMasterPendingBadges(); }, 20000);
 }
 function stopBadgeWatch(){
@@ -1129,7 +1132,7 @@ function openStudentPanel(viewId){
     console.error('누락된 뷰: '+viewId);
     return;
   }
-  if(viewId==='view-police')      { loadFineStudents(); loadFineLog(); loadFineLawChips(); }
+  if(viewId==='view-police')      { loadFineStudents(); loadFineLog(); loadFineLawChips(); loadFineRequestsMine(); }
   if(viewId==='view-stock')       { if(typeof initStockMarket==='function') initStockMarket(); }
   if(viewId==='view-credit-mgr')  { loadCreditMgrList(); }
   if(viewId==='view-tax-office')  { loadTaxOfficeDashboard(); }
@@ -1674,7 +1677,7 @@ function policeTab(panelId, el){
   document.querySelectorAll('#pol-panels > .panel-content').forEach(function(c){c.classList.remove('act');});
   el.classList.add('act');
   $(panelId).classList.add('act');
-  if(panelId==='pol-fine'){ loadFineLawChips(); loadFineLog(); }
+  if(panelId==='pol-fine'){ loadFineLawChips(); loadFineLog(); loadFineRequestsMine(); }
   if(panelId==='pol-law') loadFineLawView();
   if(panelId==='pol-record') loadFineRecords();
 }
@@ -1733,21 +1736,103 @@ function doFine(){
   if(!reason) return alert(_fineReason==='__custom__' ? '위반 사유를 직접 적어 주세요.' : '위반 사유를 골라 주세요.');
   var amt=$('fine-amt').value;
   if(!amt||amt<=0)return alert('벌금 금액을 입력해 주세요.');
+  // 경찰서장: 대통령에게 결재 청구만 / 선생님(대통령): 바로 부과
+  var direct = _isTeacher===true;
+  var label = ($('fine-stu').selectedOptions[0]||{}).textContent || sno+'번';
+  if(!confirm((direct?'[벌금 바로 부과 — 대통령]':'[벌금 결재 청구]')+'\n\n대상: '+label.split('·')[0].trim()+'\n사유: '+reason+'\n벌금: '+Number(amt).toLocaleString()+' 머니\n\n'+
+    (direct?'선생님(대통령)이라 결재 없이 바로 부과되고 신용점수 -5점이 반영돼요.':'대통령(선생님)이 승인하면 벌금이 빠지고 신용점수 -5점이 반영돼요.')+'\n진행할까요?')) return;
   showLoading();
   google.script.run.withSuccessHandler(function(r){
     hideLoading();
     if(r.success){
-      showToast('✅ '+r.msg);
+      showToast((direct?'✅ ':'📨 ')+r.msg);
       $('fine-amt').value='';
       $('fine-reason-custom').value='';
       _fineReason=''; renderFineReasonChips();
-      loadFineLog(); // ★ 저장 후 즉시 새로고침
+      loadFineLog(); loadFineRequestsMine();
+      if(direct) loadFineStudents();
     } else {
       alert(r.msg);
     }
   })
   .withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
-  .chargeFine(_cc,sno,reason,amt);
+  .requestFine(_cc||_adminCC, sno, reason, amt, direct ? '선생님' : (_sno||''), direct);
+}
+
+// ── 벌금 결재 청구 목록 (경찰서 화면 · 마스터 → 경찰서 공통) ──
+var FINE_ST = { '대기':['⏳ 결재 대기','wait'], '승인':['✅ 승인·부과됨','ok'], '반려':['❌ 반려','miss'], '취소':['↩️ 취소','none'] };
+function fineReqRow(x, mode){
+  var st = FINE_ST[x.status] || [x.status,'none'];
+  var h='<div class="fr-row fr-'+st[1]+'"><div class="fr-main">';
+  h+='<div class="fr-title"><span class="no-bdg">'+esc(x.studentNo)+'번</span> <b>'+esc(x.name)+'</b> · '+esc(x.reason)+' <span class="fr-amt">'+Number(x.amount).toLocaleString()+' 머니</span></div>';
+  h+='<div class="fr-sub">📅 '+esc(x.date)+' 청구'+(x.requester?' · 청구: '+esc(x.requester==='선생님'?'선생님':x.requester+'번'):'')+
+     (x.doneDate && x.status!=='대기' ? ' · '+esc(x.doneDate)+' '+esc(x.status) : '')+(x.note?' · 반려 이유: '+esc(x.note):'')+'</div></div>';
+  if(x.status==='대기' && mode==='master'){
+    h+='<div class="fr-btns"><button class="wt-ok" onclick="approveFineReq(\''+esc(x.id)+'\')">승인</button><button class="wt-no" onclick="rejectFineReq(\''+esc(x.id)+'\')">반려</button></div>';
+  } else if(x.status==='대기' && mode==='police'){
+    h+='<span class="fr-st wait">'+st[0]+'</span><button class="wt-no" onclick="cancelFineReq(\''+esc(x.id)+'\')">취소</button>';
+  } else {
+    h+='<span class="fr-st '+st[1]+'">'+st[0]+'</span>';
+  }
+  return h+'</div>';
+}
+
+function loadFineRequestsMine(){
+  var box=$('fine-req-list'); if(!box) return;
+  // 선생님이 경찰서에 들어오면 버튼 글자·안내도 '바로 부과'로
+  if($('fine-btn-label')) $('fine-btn-label').textContent = _isTeacher ? '벌금 바로 부과 (대통령)' : '벌금 부과 (대통령 결재 청구)';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success){ box.innerHTML='<div class="empty-msg">불러오지 못했어요.</div>'; return; }
+    if($('fine-req-cnt')) $('fine-req-cnt').textContent=r.pending+'건 대기';
+    var list=r.list.slice(0,15);
+    box.innerHTML = list.length ? '<div class="fr-list">'+list.map(function(x){ return fineReqRow(x,'police'); }).join('')+'</div>'
+      : '<div class="empty-msg">아직 결재를 청구한 벌금이 없어요.</div>';
+  }).withFailureHandler(function(e){ box.innerHTML='<div class="empty-msg">오류: '+esc(e.message)+'</div>'; })
+  .getFineRequests(_cc||_adminCC, '');
+}
+
+function cancelFineReq(id){
+  if(!confirm('이 벌금 청구를 취소할까요?\n(대통령이 아직 결재하지 않은 청구만 취소돼요)')) return;
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success) return alert((r&&r.msg)||'취소하지 못했어요.');
+    showToast('↩️ '+r.msg); loadFineRequestsMine();
+  }).withFailureHandler(function(e){ alert('오류: '+e.message); }).cancelFineRequest(_cc||_adminCC, id, _sno||'');
+}
+
+// ── 마스터 → 🚓 경찰서: 결재 대기 승인·반려 ──
+function loadPoliceAdmin(){
+  var wait=$('pa-wait'), done=$('pa-done'); if(!wait) return;
+  wait.innerHTML='<div class="empty-msg">불러오는 중...</div>';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success){ wait.innerHTML='<div class="empty-msg">불러오지 못했어요.</div>'; return; }
+    var w=r.list.filter(function(x){ return x.status==='대기'; }), d=r.list.filter(function(x){ return x.status!=='대기'; }).slice(0,30);
+    if($('pa-wait-cnt')) $('pa-wait-cnt').textContent=w.length+'건';
+    wait.innerHTML = w.length ? '<div class="fr-list">'+w.map(function(x){ return fineReqRow(x,'master'); }).join('')+'</div>'
+      : '<div class="empty-msg">결재할 벌금 청구가 없어요. 👍</div>';
+    done.innerHTML = d.length ? '<div class="fr-list">'+d.map(function(x){ return fineReqRow(x,'done'); }).join('')+'</div>'
+      : '<div class="empty-msg">아직 처리한 청구가 없어요.</div>';
+    if(typeof salMotion==='function') salMotion(wait.querySelectorAll('.fr-row'), 10);
+  }).withFailureHandler(function(e){ wait.innerHTML='<div class="empty-msg">오류: '+esc(e.message)+'</div>'; })
+  .getFineRequests(_adminCC||_cc, '');
+}
+
+function approveFineReq(id){
+  if(!confirm('이 벌금을 승인할까요?\n학생 카드에서 벌금이 빠지고 신용점수가 -5점 깎여요.')) return;
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    hideLoading();
+    if(!r||!r.success) return alert((r&&r.msg)||'승인하지 못했어요.');
+    showToast('✅ '+r.msg); loadPoliceAdmin(); refreshMasterPendingBadges();
+  }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); }).approveFineRequest(_adminCC||_cc, id);
+}
+
+function rejectFineReq(id){
+  var why=prompt('반려 이유를 적어 주세요. (없으면 그냥 확인)\n반려하면 돈과 신용점수는 그대로예요.','');
+  if(why===null) return;
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success) return alert((r&&r.msg)||'반려하지 못했어요.');
+    showToast('❌ '+r.msg); loadPoliceAdmin(); refreshMasterPendingBadges();
+  }).withFailureHandler(function(e){ alert('오류: '+e.message); }).rejectFineRequest(_adminCC||_cc, id, why);
 }
 
 var _fineLogData = [];

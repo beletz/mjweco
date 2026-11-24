@@ -3014,7 +3014,13 @@ function getMasterPendingBadgeCounts(classCode) {
       if (cleanText(hData[k][0]) === cc && String(hData[k][4]||'') === '보고') hwPending++;
     }
 
-    return { success: true, treasury: treasuryPending, credit: creditPending, stats: hwPending };
+    var fineSheet = ss.getSheetByName('FineRequests'), finePending = 0;
+    if (fineSheet) {
+      var fData = fineSheet.getDataRange().getValues();
+      for (var f = 1; f < fData.length; f++) if (cleanText(fData[f][0]) === cc && String(fData[f][6] || '') === '대기') finePending++;
+    }
+
+    return { success: true, treasury: treasuryPending, credit: creditPending, stats: hwPending, police: finePending };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
@@ -3577,7 +3583,7 @@ function getAllFines(classCode) {
       var dateStr = dateVal instanceof Date
         ? Utilities.formatDate(dateVal, Session.getScriptTimeZone(), 'yyyy-MM-dd')
         : String(dateVal || '');
-      var sno = String(tData[i][2] || '');
+      var sno = tData[i][2] == null ? '' : String(tData[i][2]);   // 0번(선생님)도 빈칸이 되지 않게
       var memo = String(tData[i][3] || '');
       // [벌금] 접두사 제거해서 사유만 표시
       var reason = memo.replace(/^\[벌금\]\s*/,'');
@@ -4435,4 +4441,125 @@ function setStudentAssets(classCode, studentNo, card, bank, reason) {
     return { success: true, card: c, bank: b, msg: sno + '번 ' + (stuData[si][2] || '') + '의 자산을 고쳤어요.\n카드 ' + oldC.toLocaleString() + ' → ' + c.toLocaleString() + ' / 은행 ' + oldB.toLocaleString() + ' → ' + b.toLocaleString() };
   } catch (e) { return { success: false, msg: e.message }; }
   finally { lock.releaseLock(); }
+}
+
+// ==========================================
+// [경찰서] 벌금 결재 청구 → 대통령(선생님) 승인 후 부과
+// FineRequests: [0]학급코드 [1]청구ID [2]학생번호 [3]이름 [4]사유 [5]금액 [6]상태(대기/승인/반려/취소) [7]청구일 [8]처리일 [9]청구자 [10]반려이유
+//  - 경찰서장이 "벌금 부과"를 누르면 청구만 올라감 (돈·신용은 그대로)
+//  - 선생님이 승인하면: 카드에서 벌금을 빼고, 용돈기입장에 [벌금] 기록, 신용점수 -5점을 바로 반영
+//  - 선생님이 경찰서에서 직접 부과하면(autoApprove) 청구와 동시에 승인
+// ==========================================
+var FINE_CREDIT_PENALTY = -5;
+function _fineReqSheet(ss) {
+  var sheet = ss.getSheetByName('FineRequests');
+  if (!sheet) {
+    sheet = ss.insertSheet('FineRequests');
+    sheet.appendRow(['학급코드','청구ID','학생번호','이름','사유','금액','상태','청구일','처리일','청구자','반려이유']);
+  }
+  return sheet;
+}
+function _fineReqFind(sheet, cc, id) {
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc && String(data[i][1]) === String(id)) return { row: i + 1, v: data[i] };
+  return null;
+}
+
+function requestFine(classCode, studentNo, reason, amount, requester, autoApprove) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo));
+    var amt = parseInt(amount), why = String(reason == null ? '' : reason).trim().slice(0, 60);
+    if (!cc) return { success: false, msg: '학급 코드가 없습니다. 다시 로그인해 주세요.' };
+    if (sno === '') return { success: false, msg: '학생을 선택해 주세요.' };
+    if (!why) return { success: false, msg: '위반 사유를 적어 주세요.' };
+    if (isNaN(amt) || amt <= 0) return { success: false, msg: '벌금 금액을 입력해 주세요.' };
+    var stuData = getOrCreateStudentsSheet(ss).getDataRange().getValues(), name = null;
+    for (var k = 1; k < stuData.length; k++) if (cleanText(stuData[k][0]) === cc && cleanText(String(stuData[k][1])) === sno) { name = String(stuData[k][2] || ''); break; }
+    if (name === null) return { success: false, msg: '학생 정보를 찾을 수 없습니다.' };
+    var id = 'FN_' + new Date().getTime() + '_' + Math.floor(Math.random() * 1000);
+    _fineReqSheet(ss).appendRow([cc, id, sno, name, why, amt, '대기', getTodayStr(), '', String(requester == null ? '' : requester), '']);
+    if (autoApprove === true) {
+      var r = approveFineRequest(cc, id);
+      if (!r.success) { cancelFineRequest(cc, id, null, true); return r; }
+      return r;
+    }
+    return { success: true, id: id, msg: sno + '번 ' + name + ' · ' + why + ' ' + amt.toLocaleString() + ' 머니\n대통령(선생님)에게 결재를 청구했어요. 승인되면 벌금과 신용점수 ' + FINE_CREDIT_PENALTY + '점이 반영돼요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// status를 비우면 전부. 최근 것이 위로
+function getFineRequests(classCode, status) {
+  try {
+    var cc = cleanText(classCode), want = String(status == null ? '' : status);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('FineRequests');
+    var list = [], pending = 0;
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (cleanText(data[i][0]) !== cc) continue;
+        var st = String(data[i][6] || '대기');
+        if (st === '대기') pending++;
+        if (want && st !== want) continue;
+        var d = data[i][7];
+        list.push({ id: String(data[i][1]), studentNo: data[i][2] == null ? '' : String(data[i][2]), name: String(data[i][3] || ''),
+                    reason: String(data[i][4] || ''), amount: Number(data[i][5]) || 0, status: st,
+                    date: d instanceof Date ? Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(d || ''),
+                    doneDate: String(data[i][8] || ''), requester: String(data[i][9] || ''), note: String(data[i][10] || '') });
+      }
+    }
+    list.reverse();
+    return { success: true, list: list.slice(0, 200), pending: pending };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+function approveFineRequest(classCode, id) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode);
+    var sheet = _fineReqSheet(ss), f = _fineReqFind(sheet, cc, id);
+    if (!f) return { success: false, msg: '청구를 찾을 수 없습니다.' };
+    if (String(f.v[6]) !== '대기') return { success: false, msg: '이미 ' + f.v[6] + '된 청구입니다.' };
+    var sno = cleanText(String(f.v[2])), amt = Number(f.v[5]) || 0, why = String(f.v[4] || '규정위반');
+    var stuSheet = getOrCreateStudentsSheet(ss), stuData = stuSheet.getDataRange().getValues(), si = -1;
+    for (var k = 1; k < stuData.length; k++) if (cleanText(stuData[k][0]) === cc && cleanText(String(stuData[k][1])) === sno) { si = k; break; }
+    if (si === -1) return { success: false, msg: sno + '번 학생을 찾을 수 없습니다.' };
+    var card = Number(stuData[si][4]) || 0;
+    if (card < amt) return { success: false, msg: sno + '번 ' + (stuData[si][2] || '') + '의 카드 잔액이 부족해요. (카드 ' + card.toLocaleString() + ' / 벌금 ' + amt.toLocaleString() + ' 머니)\n반려하거나 금액을 확인해 주세요.' };
+    var newCard = card - amt;
+    var oldCredit = Number(stuData[si][6]) || 0, newCredit = Math.max(0, Math.min(100, oldCredit + FINE_CREDIT_PENALTY));
+    stuSheet.getRange(si + 1, 5).setValue(newCard);
+    stuSheet.getRange(si + 1, 7).setValue(newCredit);
+    getOrCreateTransSheet(ss).appendRow([getTodayStr(), cc, sno, '[벌금] ' + why, '', amt, newCard, '벌금']);
+    sheet.getRange(f.row, 7).setValue('승인'); sheet.getRange(f.row, 9).setValue(getTodayStr());
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    return { success: true, newCard: newCard, newCredit: newCredit,
+             msg: sno + '번 ' + (stuData[si][2] || '') + ' · ' + why + '\n벌금 ' + amt.toLocaleString() + ' 머니 부과 완료! (카드 ' + newCard.toLocaleString() + ' 머니)\n신용점수 ' + oldCredit + ' → ' + newCredit + '점' };
+  } catch (e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
+}
+
+function rejectFineRequest(classCode, id, reason) {
+  try {
+    var cc = cleanText(classCode);
+    var sheet = _fineReqSheet(SpreadsheetApp.getActiveSpreadsheet()), f = _fineReqFind(sheet, cc, id);
+    if (!f) return { success: false, msg: '청구를 찾을 수 없습니다.' };
+    if (String(f.v[6]) !== '대기') return { success: false, msg: '이미 ' + f.v[6] + '된 청구입니다.' };
+    sheet.getRange(f.row, 7).setValue('반려'); sheet.getRange(f.row, 9).setValue(getTodayStr());
+    sheet.getRange(f.row, 11).setValue(String(reason == null ? '' : reason).trim().slice(0, 60));
+    return { success: true, msg: f.v[2] + '번 ' + f.v[3] + '의 벌금 청구(' + f.v[4] + ')를 반려했어요. 돈과 신용점수는 그대로예요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 경찰서장이 결재 전에 청구를 취소 (silent: 자동 승인 실패 때 안에서 쓰는 용도)
+function cancelFineRequest(classCode, id, requester, silent) {
+  try {
+    var cc = cleanText(classCode);
+    var sheet = _fineReqSheet(SpreadsheetApp.getActiveSpreadsheet()), f = _fineReqFind(sheet, cc, id);
+    if (!f) return { success: false, msg: '청구를 찾을 수 없습니다.' };
+    if (String(f.v[6]) !== '대기') return { success: false, msg: '이미 ' + f.v[6] + '된 청구는 취소할 수 없어요.' };
+    sheet.getRange(f.row, 7).setValue('취소'); sheet.getRange(f.row, 9).setValue(getTodayStr());
+    return { success: true, msg: silent ? '' : f.v[3] + '의 벌금 청구를 취소했어요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
 }
