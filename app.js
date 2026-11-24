@@ -913,20 +913,136 @@ function doTeacherRecord(){
 // ============================================================
 // 거래 내역 공통
 // ============================================================
+var _txCtx = {};   // 표마다 {cc, sno, list} — 선생님 수정·삭제 버튼이 씀
 function loadTx(cc,sno,tbodyId,cntId){
+  var tbl=$(tbodyId) && $(tbodyId).closest('table');
+  var teacherMode = _isTeacher===true;
+  if(tbl) tbl.classList.toggle('tx-teacher', teacherMode);
+  var assetBtn=$(tbodyId.split('-')[0]+'-asset-btn');
+  if(assetBtn) assetBtn.style.display = teacherMode && sno ? 'inline-flex' : 'none';
   google.script.run.withSuccessHandler(function(r){
     if(!r.success)return;
+    _txCtx[tbodyId] = { cc:cc, sno:String(sno), list:r.list, cntId:cntId };
     $(cntId).textContent='총 '+r.list.length+'건';
     var tb=$(tbodyId);
-    if(!r.list.length){tb.innerHTML='<tr><td colspan="5" class="empty-msg">거래 내역이 없습니다.</td></tr>';return;}
+    if(!r.list.length){tb.innerHTML='<tr><td colspan="6" class="empty-msg">거래 내역이 없습니다.</td></tr>';return;}
     var h='';
-    r.list.forEach(function(tx){
+    r.list.forEach(function(tx,i){
       var inc=tx.income?'<span class="tp">+'+Number(tx.income).toLocaleString()+'</span>':'<span style="color:#CBD5E1;">-</span>';
       var exp=tx.expense?'<span class="tm">-'+Number(tx.expense).toLocaleString()+'</span>':'<span style="color:#CBD5E1;">-</span>';
-      h+='<tr><td class="td">'+tx.date+'</td><td>'+esc(tx.memo)+' <span class="tt">'+esc(tx.type||'')+'</span></td><td>'+inc+'</td><td>'+exp+'</td><td class="tb">'+Number(tx.balance).toLocaleString()+' 머니</td></tr>';
+      var act = teacherMode
+        ? '<td class="tx-act"><button class="tx-btn" title="이 기록 고치기" onclick="txEdit(\''+tbodyId+'\','+i+')">✏️</button><button class="tx-btn del" title="이 기록 지우기" onclick="txDelete(\''+tbodyId+'\','+i+')">🗑️</button></td>'
+        : '';
+      h+='<tr><td class="td">'+tx.date+'</td><td>'+esc(tx.memo)+' <span class="tt">'+esc(tx.type||'')+'</span></td><td>'+inc+'</td><td>'+exp+'</td><td class="tb">'+Number(tx.balance).toLocaleString()+' 머니</td>'+act+'</tr>';
     });
     tb.innerHTML=h;
   }).getTransactions(cc,sno);
+}
+
+// ============================================================
+// 선생님: 학생 용돈기입장 기록 수정·삭제 + 자산(카드·은행) 수정
+//  국민(용돈기입장) 화면(s-…)과 마스터 → 용돈기입장(t-…) 둘 다에서 씀
+// ============================================================
+function txAfterChange(tbodyId){
+  var ctx=_txCtx[tbodyId]; if(!ctx) return;
+  loadTx(ctx.cc, ctx.sno, tbodyId, ctx.cntId);
+  // 잔액이 바뀌었으니 명단을 새로 받아 위쪽 금액 카드도 새로
+  google.script.run.withSuccessHandler(function(r){
+    if(!r || !r.success) return;
+    _stuList=r.list;
+    var stu=r.list.find(function(s){ return String(s.studentNo)===ctx.sno; });
+    if(tbodyId==='s-tx-tbody'){ if(stu) initStudentWallet(stu); if(typeof fillWalletStudentSelect==='function' && $('w-stu-sel')) { var keep=$('w-stu-sel').value; fillWalletStudentSelect(); $('w-stu-sel').value=keep; } }
+    else if(tbodyId==='t-tx-tbody' && stu){
+      $('t-total').textContent=(Number(stu.card||0)+Number(stu.bank||0)+Number(stu.stock||0)).toLocaleString()+' 머니';
+      $('t-card').textContent=Number(stu.card||0).toLocaleString()+' 머니';
+      $('t-bank').textContent=Number(stu.bank||0).toLocaleString()+' 머니';
+    }
+  }).getStudentList(ctx.cc);
+}
+
+// 작은 입력 창 (제목, 안내, 칸들) → 확인을 누르면 onOk(값들)
+function txDialog(title, info, fields, okLabel, onOk){
+  var wrap=$('tx-dialog');
+  if(!wrap){
+    wrap=document.createElement('div'); wrap.id='tx-dialog'; wrap.className='modal-wrap';
+    wrap.innerHTML='<div class="modal tx-modal"><h2 class="tx-d-title"></h2><div class="tx-d-info"></div><div class="tx-d-fields"></div>'+
+      '<div class="tx-d-btns"><button class="btn btn-outline tx-d-cancel" type="button">취소</button><button class="btn tx-d-ok" type="button"></button></div></div>';
+    wrap.addEventListener('click', function(e){ if(e.target===wrap) wrap.classList.remove('open'); });
+    wrap.querySelector('.tx-d-cancel').addEventListener('click', function(){ wrap.classList.remove('open'); });
+    document.body.appendChild(wrap);
+  }
+  wrap.querySelector('.tx-d-title').textContent=title;
+  wrap.querySelector('.tx-d-info').innerHTML=info||'';
+  wrap.querySelector('.tx-d-fields').innerHTML=fields.map(function(f){
+    return '<div class="ig"><label>'+esc(f.label)+'</label><input id="txd-'+f.id+'" type="'+(f.type||'text')+'"'+(f.type==='number'?' min="0"':'')+' value="'+esc(f.value==null?'':String(f.value))+'" placeholder="'+esc(f.ph||'')+'"></div>';
+  }).join('');
+  var ok=wrap.querySelector('.tx-d-ok'); ok.textContent=okLabel||'저장';
+  ok.onclick=function(){
+    var v={}; fields.forEach(function(f){ v[f.id]=($('txd-'+f.id).value||'').trim(); });
+    if(onOk(v)!==false) wrap.classList.remove('open');
+  };
+  wrap.classList.add('open');
+  setTimeout(function(){ var first=wrap.querySelector('input'); if(first) first.focus(); }, 60);
+}
+
+function txEdit(tbodyId, i){
+  var ctx=_txCtx[tbodyId]; var tx=ctx && ctx.list[i]; if(!tx) return;
+  txDialog('✏️ 기록 고치기',
+    '<div class="info-box">'+esc(ctx.sno)+'번 학생 · '+esc(tx.date)+'<br>수입이나 지출 금액을 바꾸면 그 차이만큼 <b>카드 잔액이 함께 바뀌고</b>, 이 기록 뒤의 누적 잔액도 맞춰져요.</div>',
+    [{id:'memo',label:'내역',value:tx.memo},
+     {id:'inc',label:'수입 (+)',type:'number',value:tx.income||'',ph:'없으면 비워 두기'},
+     {id:'exp',label:'지출 (−)',type:'number',value:tx.expense||'',ph:'없으면 비워 두기'}],
+    '저장하기',
+    function(v){
+      if(!v.memo){ alert('내역을 적어 주세요.'); return false; }
+      if((v.inc!=='' && (isNaN(parseInt(v.inc))||parseInt(v.inc)<0)) || (v.exp!=='' && (isNaN(parseInt(v.exp))||parseInt(v.exp)<0))){ alert('수입·지출은 0 이상의 숫자로 적어 주세요.'); return false; }
+      showLoading();
+      google.script.run.withSuccessHandler(function(r){
+        hideLoading();
+        if(!r||!r.success) return alert((r&&r.msg)||'고치지 못했어요.');
+        showToast('✅ '+r.msg); txAfterChange(tbodyId);
+      }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); })
+      .editStudentTx(ctx.cc, tx.rowNo, ctx.sno, v.memo, v.inc, v.exp);
+    });
+}
+
+function txDelete(tbodyId, i){
+  var ctx=_txCtx[tbodyId]; var tx=ctx && ctx.list[i]; if(!tx) return;
+  var net=(Number(tx.income)||0)-(Number(tx.expense)||0);
+  if(!confirm('[기록 지우기]\n\n'+tx.date+'  '+tx.memo+'\n'+(tx.income?'수입 +'+Number(tx.income).toLocaleString():'')+(tx.expense?'지출 -'+Number(tx.expense).toLocaleString():'')+
+    (net ? '\n\n지우면 카드 잔액이 '+(net>0?'-':'+')+Math.abs(net).toLocaleString()+' 머니 바뀌어요.' : '')+'\n지운 기록은 되돌릴 수 없어요. 지울까요?')) return;
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    hideLoading();
+    if(!r||!r.success) return alert((r&&r.msg)||'지우지 못했어요.');
+    showToast('🗑️ '+r.msg); txAfterChange(tbodyId);
+  }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); })
+  .deleteStudentTx(ctx.cc, tx.rowNo, ctx.sno);
+}
+
+// prefix: 's'(국민 용돈기입장) 또는 't'(마스터 → 용돈기입장)
+function openAssetEdit(prefix){
+  var tbodyId=prefix+'-tx-tbody', ctx=_txCtx[tbodyId];
+  if(!ctx || !ctx.sno) return alert('학생을 먼저 선택해 주세요.');
+  var stu=(_stuList||[]).find(function(s){ return String(s.studentNo)===ctx.sno; }) || {};
+  txDialog('💰 자산 수정',
+    '<div class="info-box"><b>'+esc(ctx.sno)+'번 '+esc(stu.name||'')+'</b>의 잔액을 직접 정해요. 카드 잔액이 바뀌면 용돈기입장에 <b>[교사 조정]</b> 기록이 남아요.</div>'+
+    '<div class="tx-warn">🏦 은행 잔액은 원래 진행 중인 예금 원금의 합이에요. 직접 바꾸면 마스터 → 은행 관리의 "은행 잔액 점검"에서 차이로 나올 수 있어요.</div>',
+    [{id:'card',label:'💳 카드 잔액',type:'number',value:Number(stu.card||0)},
+     {id:'bank',label:'🏦 은행 잔액',type:'number',value:Number(stu.bank||0)},
+     {id:'why',label:'이유 (선택)',value:'',ph:'예: 계산 실수 바로잡기'}],
+    '바꾸기',
+    function(v){
+      if(v.card==='' || v.bank==='' || isNaN(parseInt(v.card)) || isNaN(parseInt(v.bank)) || parseInt(v.card)<0 || parseInt(v.bank)<0){ alert('카드·은행 잔액을 0 이상의 숫자로 적어 주세요.'); return false; }
+      if(!confirm('카드 '+Number(stu.card||0).toLocaleString()+' → '+parseInt(v.card).toLocaleString()+'\n은행 '+Number(stu.bank||0).toLocaleString()+' → '+parseInt(v.bank).toLocaleString()+'\n\n이대로 바꿀까요?')) return false;
+      showLoading();
+      google.script.run.withSuccessHandler(function(r){
+        hideLoading();
+        if(!r||!r.success) return alert((r&&r.msg)||'바꾸지 못했어요.');
+        showToast('✅ '+r.msg); txAfterChange(tbodyId);
+      }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); })
+      .setStudentAssets(ctx.cc, ctx.sno, parseInt(v.card), parseInt(v.bank), v.why);
+    });
 }
 
 // ============================================================
@@ -3543,8 +3659,74 @@ function initSmartPayroll(){
       if(c) c.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;">등록된 학생이 없습니다. 국민 관리에서 학생을 먼저 추가해 주세요.</div>';
       return;
     }
-    initSmartPayrollDraw();
+    // 선생님이 끌어서 정해 둔 학생 순서도 함께 받아 옴
+    google.script.run.withSuccessHandler(function(o){
+      _studentOrder = (o && o.success && o.order) || [];
+      initSmartPayrollDraw();
+    }).withFailureHandler(function(){ initSmartPayrollDraw(); }).getStudentOrder(_adminCC);
   }).withFailureHandler(function(){ if(_stuList.length) initSmartPayrollDraw(); }).getStudentList(_adminCC);
+}
+
+// ── 학생 순서: 선생님이 정한 순서 → (없는 학생은) 번호순, 0번(선생님)은 항상 맨 아래 ──
+var _studentOrder = [];
+function sortByClassOrder(list){
+  var pos = {}; _studentOrder.forEach(function(s,i){ pos[String(s)] = i; });
+  return list.slice().sort(function(a,b){
+    var sa=String(a.studentNo), sb=String(b.studentNo);
+    if(sa==='0' || sb==='0') return sa==='0' ? (sb==='0'?0:1) : -1;
+    var pa = sa in pos ? pos[sa] : null, pb = sb in pos ? pos[sb] : null;
+    if(pa!==null && pb!==null) return pa-pb;
+    if(pa!==null) return -1;
+    if(pb!==null) return 1;
+    var na=parseFloat(sa), nb=parseFloat(sb);
+    if(!isNaN(na) && !isNaN(nb) && na!==nb) return na-nb;
+    return sa<sb?-1:sa>sb?1:0;
+  });
+}
+
+// ── 스마트 월급 표에서 ⠿ 손잡이를 끌어 학생 순서 바꾸기 (마우스·터치 모두) ──
+//  칸 번호(sp-base-0 …)는 그대로 두고 줄만 옮기므로, 입력해 둔 금액은 그대로 유지됨
+function payrollDragStart(ev, handle){
+  ev.preventDefault();
+  var row = handle.closest('tr'), tbody = row.parentNode;
+  row.classList.add('sp-dragging');
+  if(handle.setPointerCapture && ev.pointerId!==undefined){ try{ handle.setPointerCapture(ev.pointerId); }catch(e){} }
+  var move = function(e){
+    var y = e.clientY;
+    var rows = Array.prototype.filter.call(tbody.children, function(r){ return r!==row && r.getAttribute('data-sno')!=='0'; });
+    var before = null;
+    for(var i=0;i<rows.length;i++){ var b=rows[i].getBoundingClientRect(); if(y < b.top + b.height/2){ before = rows[i]; break; } }
+    var zero = tbody.querySelector('tr[data-sno="0"]');
+    tbody.insertBefore(row, before || zero || null);
+  };
+  var done = false;
+  var up = function(e){
+    if(done) return; done = true;
+    if(e && e.type==='pointerup' && typeof e.clientY==='number') move(e);   // 놓은 자리에 한 번 더 맞춤
+    document.removeEventListener('pointermove', move, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('pointercancel', up, true);
+    row.classList.remove('sp-dragging');
+    if(window.anime) anime({ targets: row, backgroundColor: ['#EDE9FE', '#FFFFFF'], duration: 900, easing: 'easeOutQuad', complete:function(){ row.style.backgroundColor=''; } });
+    savePayrollOrder();
+  };
+  // 손잡이 밖으로 빨리 움직여도 놓치지 않게 문서 전체에서 받음
+  document.addEventListener('pointermove', move, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true);
+}
+function savePayrollOrder(){
+  var order = Array.prototype.map.call(document.querySelectorAll('#smart-payroll-table tbody tr[data-sno]'), function(r){ return r.getAttribute('data-sno'); })
+    .filter(function(s){ return s!=='0'; });
+  if(order.join(',')===_studentOrder.join(',')) return;
+  _studentOrder = order;
+  google.script.run.withSuccessHandler(function(r){ showToast(r && r.success ? '↕️ 학생 순서를 저장했어요.' : '⚠️ '+((r&&r.msg)||'순서를 저장하지 못했어요.')); })
+    .withFailureHandler(function(e){ alert('순서 저장 오류: '+e.message); })
+    .setStudentOrder(_adminCC, JSON.stringify(order));
+}
+function resetPayrollOrder(){
+  if(!confirm('학생 순서를 번호순으로 되돌릴까요?\n(0번 선생님은 맨 아래)')) return;
+  _studentOrder = [];
+  google.script.run.withSuccessHandler(function(r){
+    showToast(r && r.success ? '🔢 번호순으로 되돌렸어요.' : '⚠️ '+((r&&r.msg)||'되돌리지 못했어요.'));
+    renderSmartPayrollTable();
+  }).withFailureHandler(function(e){ alert('오류: '+e.message); }).setStudentOrder(_adminCC, '[]');
 }
 
 function initSmartPayrollDraw(){
@@ -3560,7 +3742,7 @@ function initSmartPayrollDraw(){
 
 function renderSmartPayrollTable(){
   var c=$('smart-payroll-table'); if(!c||!_stuList.length) return;
-  _payrollList=_stuList.slice();   // ★ 표를 그린 순간의 명단을 따로 기억 (나중에 명단이 새로고침돼도 칸이 어긋나지 않게)
+  _payrollList=sortByClassOrder(_stuList);   // ★ 표를 그린 순간의 명단을 따로 기억 (나중에 명단이 새로고침돼도 칸이 어긋나지 않게). 정한 순서 → 번호순, 0번은 맨 아래
   var cols=getEffectiveCols();
 
   var h='<table style="width:100%;border-collapse:collapse;min-width:700px;font-family:Pretendard,sans-serif;">';
@@ -3584,6 +3766,7 @@ function renderSmartPayrollTable(){
   h+='<tr style="background:#FAFBFF;border-bottom:2px solid #E2E8F0;">';
   h+='<td colspan="2" style="padding:10px 18px;text-align:center;">';
   h+='  <span style="font-size:13px;font-weight:700;color:#64748B;background:#E2E8F0;padding:5px 12px;border-radius:20px;">일괄 입력</span>';
+  h+='  <div class="sp-order-tip">⠿ 를 끌어서 순서 바꾸기 · <a href="javascript:void(0)" onclick="resetPayrollOrder()">번호순으로</a></div>';
   h+='</td>';
   // 기본금 일괄
   h+='<td style="padding:10px 12px;text-align:center;">';
@@ -3616,8 +3799,11 @@ function renderSmartPayrollTable(){
   _payrollList.forEach(function(s,idx){
     var base=_salaryTable[s.job||'국민']||_salaryTable['국민']||0;
     var netCalc=base;
-    h+='<tr style="border-bottom:1px solid #F1F5F9;" onmouseover="this.style.background=\'#FAFBFF\'" onmouseout="this.style.background=\'white\'">';
-    h+='<td style="padding:14px 18px;">';
+    var isZero = String(s.studentNo)==='0';
+    h+='<tr data-sno="'+esc(s.studentNo)+'" style="border-bottom:1px solid #F1F5F9;" onmouseover="this.style.background=\'#FAFBFF\'" onmouseout="this.style.background=\'white\'">';
+    h+='<td style="padding:14px 18px;white-space:nowrap;">';
+    h+= isZero ? '<span class="sp-handle off" title="선생님(0번)은 항상 맨 아래예요">📌</span>'
+               : '<span class="sp-handle" title="끌어서 순서 바꾸기" onpointerdown="payrollDragStart(event,this)">⠿</span>';
     h+='  <span style="background:#EEF2FF;color:#4338CA;font-size:14px;font-weight:700;padding:5px 12px;border-radius:20px;">'+esc(s.job||'국민')+'</span>';
     h+='</td>';
     h+='<td style="padding:14px 18px;">';

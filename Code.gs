@@ -353,6 +353,7 @@ function getTransactions(classCode, studentNo) {
     for (var i = 1; i < data.length; i++) {
       if (cleanText(data[i][1])===cc && cleanText(String(data[i][2]))===sno) {
         list.push({
+          rowNo:   i,
           date:    data[i][0],
           memo:    data[i][3],
           income:  data[i][4]||'',
@@ -4294,4 +4295,144 @@ function rejectSnackRequest(classCode, reqId, reason) {
     sheet.getRange(f.row, 10).setValue('반려'); sheet.getRange(f.row, 12, 1, 2).setValues([[getTodayStr(), String(reason || '').trim().slice(0, 60)]]);
     return { success: true, msg: f.v[3] + '의 ' + f.v[4] + ' 신청을 반려했어요.' };
   } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// ==========================================
+// [학생 순서] 스마트 월급 표 등에서 선생님이 끌어서 정한 순서
+// StudentOrder: [0]학급코드 [1]학생번호 순서(JSON 배열). 0번(선생님)은 항상 맨 아래라 저장하지 않음
+// ==========================================
+function getStudentOrder(classCode) {
+  try {
+    var cc = cleanText(classCode);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('StudentOrder');
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (cleanText(data[i][0]) === cc) {
+          var l = []; try { l = JSON.parse(String(data[i][1] || '[]')); } catch (pe) { l = []; }
+          return { success: true, order: Array.isArray(l) ? l.map(String) : [] };
+        }
+      }
+    }
+    return { success: true, order: [] };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+function setStudentOrder(classCode, orderJson) {
+  try {
+    var cc = cleanText(classCode);
+    if (!cc) return { success: false, msg: '학급 코드가 없습니다.' };
+    var raw = typeof orderJson === 'string' ? JSON.parse(orderJson || '[]') : (orderJson || []);
+    if (!Array.isArray(raw)) return { success: false, msg: '순서 형식이 올바르지 않습니다.' };
+    var seen = {}, list = [];
+    raw.forEach(function (s) { s = cleanText(String(s)); if (s !== '' && s !== '0' && !seen[s]) { seen[s] = 1; list.push(s); } });
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('StudentOrder');
+    if (!sheet) { sheet = ss.insertSheet('StudentOrder'); sheet.appendRow(['학급코드', '순서']); }
+    var data = sheet.getDataRange().getValues(), json = JSON.stringify(list);
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(json); return { success: true, msg: '학생 순서를 저장했어요.' }; }
+    }
+    sheet.appendRow([cc, json]);
+    return { success: true, msg: '학생 순서를 저장했어요.' };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// ==========================================
+// [교사] 학생 용돈기입장 기록 수정·삭제, 자산(카드·은행) 직접 수정
+//  - 기록을 고치거나 지우면 그 차이만큼 카드 잔액을 고치고,
+//    그 기록과 그 뒤 기록들의 "누적 잔액"도 같은 만큼 옮겨서 표가 맞게 보이도록 함
+//  - rowNo는 getTransactions가 준 번호. 혹시 그사이 기록이 바뀌었으면 학생 번호가 달라 거절됨
+// ==========================================
+function _txShiftBalances(tSheet, tData, cc, sno, fromRow, diff) {
+  if (!diff) return;
+  for (var j = fromRow; j < tData.length; j++) {
+    if (cleanText(tData[j][1]) === cc && cleanText(String(tData[j][2])) === sno) {
+      tSheet.getRange(j + 1, 7).setValue((Number(tData[j][6]) || 0) + diff);
+    }
+  }
+}
+function _stuRowOf(stuData, cc, sno) {
+  for (var i = 1; i < stuData.length; i++) if (cleanText(stuData[i][0]) === cc && cleanText(String(stuData[i][1])) === sno) return i;
+  return -1;
+}
+
+function editStudentTx(classCode, rowNo, studentNo, memo, income, expense) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var tSheet = getOrCreateTransSheet(ss), tData = tSheet.getDataRange().getValues();
+    var stuSheet = getOrCreateStudentsSheet(ss), stuData = stuSheet.getDataRange().getValues();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo)), rn = parseInt(rowNo);
+    if (!(rn >= 1 && rn < tData.length) || cleanText(tData[rn][1]) !== cc || cleanText(String(tData[rn][2])) !== sno)
+      return { success: false, msg: '기록을 찾을 수 없어요. 화면을 새로고침한 뒤 다시 해 주세요.' };
+    var m = String(memo == null ? '' : memo).trim();
+    if (!m) return { success: false, msg: '내역을 적어 주세요.' };
+    var inc = income === '' || income == null ? 0 : parseInt(income), exp = expense === '' || expense == null ? 0 : parseInt(expense);
+    if (isNaN(inc) || isNaN(exp) || inc < 0 || exp < 0) return { success: false, msg: '수입·지출은 0 이상의 숫자로 적어 주세요.' };
+    var oldNet = (Number(tData[rn][4]) || 0) - (Number(tData[rn][5]) || 0), diff = (inc - exp) - oldNet;
+    var si = _stuRowOf(stuData, cc, sno);
+    if (si === -1) return { success: false, msg: sno + '번 학생을 찾을 수 없어요.' };
+    var newCard = (Number(stuData[si][4]) || 0) + diff;
+    tSheet.getRange(rn + 1, 4, 1, 3).setValues([[m, inc || '', exp || '']]);
+    _txShiftBalances(tSheet, tData, cc, sno, rn, diff);
+    if (diff) stuSheet.getRange(si + 1, 5).setValue(newCard);
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    return { success: true, newCard: newCard, msg: '기록을 고쳤어요.' + (diff ? ' 카드 잔액이 ' + (diff > 0 ? '+' : '') + diff.toLocaleString() + ' 머니 바뀌었어요. (지금 ' + newCard.toLocaleString() + ' 머니)' : '') };
+  } catch (e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
+}
+
+function deleteStudentTx(classCode, rowNo, studentNo) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var tSheet = getOrCreateTransSheet(ss), tData = tSheet.getDataRange().getValues();
+    var stuSheet = getOrCreateStudentsSheet(ss), stuData = stuSheet.getDataRange().getValues();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo)), rn = parseInt(rowNo);
+    if (!(rn >= 1 && rn < tData.length) || cleanText(tData[rn][1]) !== cc || cleanText(String(tData[rn][2])) !== sno)
+      return { success: false, msg: '기록을 찾을 수 없어요. 화면을 새로고침한 뒤 다시 해 주세요.' };
+    var net = (Number(tData[rn][4]) || 0) - (Number(tData[rn][5]) || 0);
+    var si = _stuRowOf(stuData, cc, sno);
+    var newCard = si === -1 ? null : (Number(stuData[si][4]) || 0) - net;
+    _txShiftBalances(tSheet, tData, cc, sno, rn + 1, -net);
+    if (si !== -1 && net) stuSheet.getRange(si + 1, 5).setValue(newCard);
+    tSheet.deleteRow(rn + 1);
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    return { success: true, newCard: newCard, msg: '기록을 지웠어요.' + (net ? ' 카드 잔액이 ' + (-net > 0 ? '+' : '') + (-net).toLocaleString() + ' 머니 바뀌었어요.' : '') };
+  } catch (e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// 카드·은행 잔액을 선생님이 직접 정함. 카드가 바뀌면 용돈기입장에 "[교사 조정]" 기록을 남김
+function setStudentAssets(classCode, studentNo, card, bank, reason) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var stuSheet = getOrCreateStudentsSheet(ss), stuData = stuSheet.getDataRange().getValues();
+    var cc = cleanText(classCode), sno = cleanText(String(studentNo));
+    var si = _stuRowOf(stuData, cc, sno);
+    if (si === -1) return { success: false, msg: sno + '번 학생을 찾을 수 없어요.' };
+    var c = parseInt(card), b = parseInt(bank);
+    if (isNaN(c) || isNaN(b)) return { success: false, msg: '카드·은행 잔액을 숫자로 적어 주세요.' };
+    if (c < 0 || b < 0) return { success: false, msg: '잔액은 0 이상이어야 해요.' };
+    var oldC = Number(stuData[si][4]) || 0, oldB = Number(stuData[si][5]) || 0;
+    if (c === oldC && b === oldB) return { success: false, msg: '바뀐 금액이 없어요.' };
+    var why = String(reason == null ? '' : reason).trim().slice(0, 40);
+    stuSheet.getRange(si + 1, 5, 1, 2).setValues([[c, b]]);
+    var tSheet = getOrCreateTransSheet(ss), today = getTodayStr();
+    if (c !== oldC) {
+      var d = c - oldC;
+      tSheet.appendRow([today, cc, sno, '[교사 조정] 카드 잔액 ' + oldC.toLocaleString() + ' → ' + c.toLocaleString() + (why ? ' (' + why + ')' : ''), d > 0 ? d : '', d < 0 ? -d : '', c, '교사조정']);
+    }
+    if (b !== oldB) {
+      tSheet.appendRow([today, cc, sno, '[교사 조정] 은행 잔액 ' + oldB.toLocaleString() + ' → ' + b.toLocaleString() + (why ? ' (' + why + ')' : ''), '', '', c, '교사조정']);
+    }
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    return { success: true, card: c, bank: b, msg: sno + '번 ' + (stuData[si][2] || '') + '의 자산을 고쳤어요.\n카드 ' + oldC.toLocaleString() + ' → ' + c.toLocaleString() + ' / 은행 ' + oldB.toLocaleString() + ' → ' + b.toLocaleString() };
+  } catch (e) { return { success: false, msg: e.message }; }
+  finally { lock.releaseLock(); }
 }

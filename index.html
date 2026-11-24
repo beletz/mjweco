@@ -767,7 +767,8 @@
               <div class="ac2"><div class="ai" style="color:var(--blue);"><i class="fa-solid fa-credit-card"></i></div><div class="al">카드</div><div class="av" style="color:var(--blue);" id="t-card">0 머니</div></div>
               <div class="ac2"><div class="ai" style="color:var(--green);"><i class="fa-solid fa-building-columns"></i></div><div class="al">은행</div><div class="av" style="color:var(--green);" id="t-bank">0 머니</div></div>
             </div>
-            <table class="txt"><thead><tr><th>날짜</th><th>내역</th><th style="text-align:right">수입</th><th style="text-align:right">지출</th><th style="text-align:right">잔액</th></tr></thead>
+            <div class="tx-tools"><button class="tx-asset-btn" id="t-asset-btn" style="display:none;" onclick="openAssetEdit('t')">💰 자산 수정</button></div>
+            <table class="txt"><thead><tr><th>날짜</th><th>내역</th><th style="text-align:right">수입</th><th style="text-align:right">지출</th><th style="text-align:right">잔액</th><th class="tx-act">관리</th></tr></thead>
             <tbody id="t-tx-tbody"><tr><td colspan="5" class="empty-msg">학생을 선택하세요.</td></tr></tbody></table>
           </div>
         </div>
@@ -1109,8 +1110,9 @@
             <div class="ac2"><div class="ai" style="color:var(--blue);"><i class="fa-solid fa-credit-card"></i></div><div class="al">카드 (체크카드)</div><div class="av" style="color:var(--blue);" id="s-card">0 머니</div></div>
             <div class="ac2"><div class="ai" style="color:var(--green);"><i class="fa-solid fa-building-columns"></i></div><div class="al">은행 예금</div><div class="av" style="color:var(--green);" id="s-bank">0 머니</div></div>
           </div>
+          <div class="tx-tools"><button class="tx-asset-btn" id="s-asset-btn" style="display:none;" onclick="openAssetEdit('s')">💰 자산 수정 (선생님)</button></div>
           <table class="txt">
-            <thead><tr><th>날짜</th><th>거래 내역</th><th style="text-align:right">수입</th><th style="text-align:right">지출</th><th style="text-align:right">누적 잔액</th></tr></thead>
+            <thead><tr><th>날짜</th><th>거래 내역</th><th style="text-align:right">수입</th><th style="text-align:right">지출</th><th style="text-align:right">누적 잔액</th><th class="tx-act">관리</th></tr></thead>
             <tbody id="s-tx-tbody"><tr><td colspan="5" class="empty-msg">거래 내역이 없습니다.</td></tr></tbody>
           </table>
         </div>
