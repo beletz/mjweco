@@ -194,12 +194,12 @@
     }).withFailureHandler(function (e) { box.innerHTML = fail(e); }).getSnackRequests(cc(), '');
   }
 
-  window.snackRequest = function (i) {
+  window.snackRequest = async function (i) {
     var m = snackMenu[i], sno = target(); if (!m) return;
     if (!sno) return alert('학생을 선택해 주세요.');
     var qty = parseInt(($('wt-sq-' + i) || {}).value) || 0;
     if (qty < 1 || qty > 20) return alert('수량은 1개에서 20개 사이로 적어 주세요.');
-    var memo = prompt('[간식 신청]\n\n' + m.name + ' ' + qty + '개 = ' + won(m.price * qty) + '\n선생님이 승인하면 카드에서 빠져요.\n\n선생님께 남길 말 (없으면 그냥 확인)', '');
+    var memo = await uiPrompt('[간식 신청]\n\n' + m.name + ' ' + qty + '개 = ' + won(m.price * qty) + '\n선생님이 승인하면 카드에서 빠져요.\n\n선생님께 남길 말 (없으면 그냥 확인)', '');
     if (memo === null) return;
     if (typeof showLoading === 'function') showLoading();
     google.script.run.withSuccessHandler(function (r) {
@@ -213,8 +213,8 @@
     }).requestSnack(cc(), sno, m.name, qty, memo);
   };
 
-  window.snackCancel = function (id) {
-    if (!confirm('이 간식 신청을 취소할까요?')) return;
+  window.snackCancel = async function (id) {
+    if (!await uiConfirm('이 간식 신청을 취소할까요?')) return;
     google.script.run.withSuccessHandler(function (r) {
       if (!r || !r.success) return alert((r && r.msg) || '취소하지 못했어요.');
       if (typeof showToast === 'function') showToast('↩️ ' + r.msg);
@@ -230,17 +230,17 @@
     }).withFailureHandler(function () {}).getStudentList(cc());
   }
 
-  window.snackApprove = function (id, custom, qty, price) {
+  window.snackApprove = async function (id, custom, qty, price) {
     var unit = null;
     if (custom) {
       // 직접 적어 신청한 간식은 선생님이 1개 가격을 정함 (학생이 적은 가격이 있으면 미리 채워 둠)
-      var v = prompt('[직접 신청한 간식 승인]\n\n1개 가격을 정해 주세요. (' + qty + '개를 신청했어요)\n0을 적으면 무료로 줘요.', price ? String(price) : '');
+      var v = await uiPrompt('[직접 신청한 간식 승인]\n\n1개 가격을 정해 주세요. (' + qty + '개를 신청했어요)\n0을 적으면 무료로 줘요.', price ? String(price) : '');
       if (v === null) return;
       v = String(v).trim();
       if (v === '' || isNaN(parseInt(v)) || parseInt(v) < 0) return alert('가격은 0 이상의 숫자로 적어 주세요.');
       unit = parseInt(v);
-      if (!confirm('1개 ' + won(unit) + ' × ' + qty + '개 = ' + won(unit * qty) + '\n학생 카드에서 빠지고 용돈기입장에 기록돼요. 승인할까요?')) return;
-    } else if (!confirm('이 간식 신청을 승인할까요?\n학생 카드에서 돈이 빠지고 용돈기입장에 기록돼요.')) return;
+      if (!await uiConfirm('1개 ' + won(unit) + ' × ' + qty + '개 = ' + won(unit * qty) + '\n학생 카드에서 빠지고 용돈기입장에 기록돼요. 승인할까요?')) return;
+    } else if (!await uiConfirm('이 간식 신청을 승인할까요?\n학생 카드에서 돈이 빠지고 용돈기입장에 기록돼요.')) return;
     if (typeof showLoading === 'function') showLoading();
     google.script.run.withSuccessHandler(function (r) {
       if (typeof hideLoading === 'function') hideLoading();
@@ -254,7 +254,7 @@
   };
 
   // 메뉴에 없는 간식 직접 적어서 신청
-  window.snackCustomRequest = function () {
+  window.snackCustomRequest = async function () {
     var sno = target();
     if (!sno) return alert('학생을 선택해 주세요.');
     var name = ($('wt-cs-name').value || '').trim();
@@ -265,7 +265,7 @@
     if (qty < 1 || qty > 20) return alert('수량은 1개에서 20개 사이로 적어 주세요.');
     if (ps !== '' && (isNaN(parseInt(ps)) || parseInt(ps) < 0)) return alert('가격은 0 이상의 숫자로 적어 주세요. 모르면 비워 두세요.');
     var price = ps === '' ? 0 : parseInt(ps);
-    if (!confirm('[간식 직접 신청]\n\n' + name + ' ' + qty + '개\n' + (price ? '예상 금액: ' + won(price * qty) : '가격: 선생님이 정해요') +
+    if (!await uiConfirm('[간식 직접 신청]\n\n' + name + ' ' + qty + '개\n' + (price ? '예상 금액: ' + won(price * qty) : '가격: 선생님이 정해요') +
       (memo ? '\n남길 말: ' + memo : '') + '\n\n선생님이 승인하면 카드에서 돈이 빠져요. 신청할까요?')) return;
     if (typeof showLoading === 'function') showLoading();
     google.script.run.withSuccessHandler(function (r) {
@@ -280,8 +280,8 @@
     }).requestSnack(cc(), sno, name, qty, memo, price, true);
   };
 
-  window.snackReject = function (id) {
-    var why = prompt('반려 이유를 적어 주세요. (없으면 그냥 확인)', '');
+  window.snackReject = async function (id) {
+    var why = await uiPrompt('반려 이유를 적어 주세요. (없으면 그냥 확인)', '');
     if (why === null) return;
     google.script.run.withSuccessHandler(function (r) {
       if (!r || !r.success) return alert((r && r.msg) || '반려하지 못했어요.');

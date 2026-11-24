@@ -378,8 +378,8 @@ function doBulk(){
   }).bulkCreateStudents(_adminCC,c,s);
 }
 
-function doRegenAll(){
-  if(!confirm('모든 학생의 접속코드를 새로 발급합니까?'))return;
+async function doRegenAll(){
+  if(!await uiConfirm('모든 학생의 접속코드를 새로 발급합니까?'))return;
   google.script.run.withSuccessHandler(function(r){
     showToast(r.success?'🔄 '+r.msg:'⚠️ '+r.msg);if(r.success)loadList();
   }).regenerateAllCodes(_adminCC);
@@ -409,8 +409,8 @@ function doUpdate(sno){
   google.script.run.withSuccessHandler(function(r){showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);if(r.success)loadList();}).updateStudent(_adminCC,sno,name,job);
 }
 
-function doDel(sno){
-  if(!confirm(sno+'번 학생을 삭제할까요?'))return;
+async function doDel(sno){
+  if(!await uiConfirm(sno+'번 학생을 삭제할까요?'))return;
   google.script.run.withSuccessHandler(function(r){showToast(r.success?'🗑️ '+r.msg:'⚠️ '+r.msg);if(r.success)loadList();}).deleteStudent(_adminCC,sno);
 }
 
@@ -422,11 +422,11 @@ function refreshPaySels(){
   if(sel){sel.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=stuOptLabel(s);sel.appendChild(o);});}
 }
 
-function doBulkPay(){
+async function doBulkPay(){
   var type=$('bulk-pay-type').value,amt=$('bulk-pay-amt').value,memo=$('bulk-pay-memo').value;
   if(!amt||amt<=0)return alert('금액을 입력해 주세요.');
   if(!memo)return alert('내역을 입력해 주세요.');
-  if(!confirm('전체 학생에게 '+Number(amt).toLocaleString()+' 머니를 지급합니까?'))return;
+  if(!await uiConfirm('전체 학생에게 '+Number(amt).toLocaleString()+' 머니를 지급합니까?'))return;
   google.script.run.withSuccessHandler(function(r){
     showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);if(r.success)loadList();
   }).recordIncomeBulk(_adminCC,memo,amt,type);
@@ -744,10 +744,10 @@ function refreshTaxSels(){
   if(sel){sel.innerHTML='<option value="">-- 학생 선택 --</option>';_stuList.forEach(function(s){var o=document.createElement('option');o.value=s.studentNo;o.textContent=stuOptLabel(s);sel.appendChild(o);});}
 }
 
-function doBulkTax(){
+async function doBulkTax(){
   var rate=$('tax-rate').value,memo=$('tax-memo').value;
   if(!rate||rate<=0)return alert('세율을 입력해 주세요.');
-  if(!confirm('전체 학생에게 세율 '+rate+'% 세금을 부과합니까?'))return;
+  if(!await uiConfirm('전체 학생에게 세율 '+rate+'% 세금을 부과합니까?'))return;
   google.script.run.withSuccessHandler(function(r){
     showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);if(r.success)loadList();
   }).chargeTaxBulk(_adminCC,rate,memo||'세금 징수');
@@ -781,10 +781,10 @@ function renderCreditTable(){
   tb.innerHTML=h;
 }
 
-function doBulkCredit(){
+async function doBulkCredit(){
   var delta=$('credit-bulk-delta').value;
   if(!delta)return alert('변화량을 입력해 주세요.');
-  if(!confirm('전체 학생 신용점수를 '+delta+' 조정합니까?'))return;
+  if(!await uiConfirm('전체 학생 신용점수를 '+delta+' 조정합니까?'))return;
   google.script.run.withSuccessHandler(function(r){
     showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);if(r.success)loadList();
   }).adjustCreditBulk(_adminCC,delta,'일괄조정');
@@ -982,7 +982,8 @@ function txDialog(title, info, fields, okLabel, onOk){
   var ok=wrap.querySelector('.tx-d-ok'); ok.textContent=okLabel||'저장';
   ok.onclick=function(){
     var v={}; fields.forEach(function(f){ v[f.id]=($('txd-'+f.id).value||'').trim(); });
-    if(onOk(v)!==false) wrap.classList.remove('open');
+    // onOk가 확인 창을 기다릴 수 있어서(async) 결과를 기다린 뒤 닫음. false면 창을 그대로 둠
+    Promise.resolve(onOk(v)).then(function(res){ if(res!==false) wrap.classList.remove('open'); });
   };
   wrap.classList.add('open');
   setTimeout(function(){ var first=wrap.querySelector('input'); if(first) first.focus(); }, 60);
@@ -1009,10 +1010,10 @@ function txEdit(tbodyId, i){
     });
 }
 
-function txDelete(tbodyId, i){
+async function txDelete(tbodyId, i){
   var ctx=_txCtx[tbodyId]; var tx=ctx && ctx.list[i]; if(!tx) return;
   var net=(Number(tx.income)||0)-(Number(tx.expense)||0);
-  if(!confirm('[기록 지우기]\n\n'+tx.date+'  '+tx.memo+'\n'+(tx.income?'수입 +'+Number(tx.income).toLocaleString():'')+(tx.expense?'지출 -'+Number(tx.expense).toLocaleString():'')+
+  if(!await uiConfirm('[기록 지우기]\n\n'+tx.date+'  '+tx.memo+'\n'+(tx.income?'수입 +'+Number(tx.income).toLocaleString():'')+(tx.expense?'지출 -'+Number(tx.expense).toLocaleString():'')+
     (net ? '\n\n지우면 카드 잔액이 '+(net>0?'-':'+')+Math.abs(net).toLocaleString()+' 머니 바뀌어요.' : '')+'\n지운 기록은 되돌릴 수 없어요. 지울까요?')) return;
   showLoading();
   google.script.run.withSuccessHandler(function(r){
@@ -1035,9 +1036,9 @@ function openAssetEdit(prefix){
      {id:'bank',label:'🏦 은행 잔액',type:'number',value:Number(stu.bank||0)},
      {id:'why',label:'이유 (선택)',value:'',ph:'예: 계산 실수 바로잡기'}],
     '바꾸기',
-    function(v){
+    async function(v){
       if(v.card==='' || v.bank==='' || isNaN(parseInt(v.card)) || isNaN(parseInt(v.bank)) || parseInt(v.card)<0 || parseInt(v.bank)<0){ alert('카드·은행 잔액을 0 이상의 숫자로 적어 주세요.'); return false; }
-      if(!confirm('카드 '+Number(stu.card||0).toLocaleString()+' → '+parseInt(v.card).toLocaleString()+'\n은행 '+Number(stu.bank||0).toLocaleString()+' → '+parseInt(v.bank).toLocaleString()+'\n\n이대로 바꿀까요?')) return false;
+      if(!await uiConfirm('카드 '+Number(stu.card||0).toLocaleString()+' → '+parseInt(v.card).toLocaleString()+'\n은행 '+Number(stu.bank||0).toLocaleString()+' → '+parseInt(v.bank).toLocaleString()+'\n\n이대로 바꿀까요?')) return false;
       showLoading();
       google.script.run.withSuccessHandler(function(r){
         hideLoading();
@@ -1312,8 +1313,8 @@ function doDeposit(){
   }).createDeposit(_cc,_sno,weeks,amt);
 }
 
-function doRedeem(idx){
-  if(!confirm('예금을 만기해지 하겠습니까?\n원금+이자가 카드로 입금되고 신용점수가 자동 부여됩니다.')) return;
+async function doRedeem(idx){
+  if(!await uiConfirm('예금을 만기해지 하겠습니까?\n원금+이자가 카드로 입금되고 신용점수가 자동 부여됩니다.')) return;
   google.script.run.withSuccessHandler(function(r){
     if(r.success){
       showToast('✅ '+r.msg);
@@ -1413,7 +1414,7 @@ function calculatePreview(){
   }
 }
 
-function saveNewDeposit(){
+async function saveNewDeposit(){
   var customerEl = $('deposit-customer');
   var customerNo = customerEl.value;
   if(!customerNo) return alert('학생을 먼저 선택해주세요.');
@@ -1432,7 +1433,7 @@ function saveNewDeposit(){
   // 이 기간 신용점수 미리 확인
   var creditGainPreview = _depositCreditMap[parseInt(period)] || 0;
 
-  if(!confirm(
+  if(!await uiConfirm(
   '예금을 등록하시겠습니까?\n\n' +
   '고객: ' + customerEl.options[customerEl.selectedIndex].text + '\n' +
   '기간: ' + period + '주 / 이율: ' + finalRate + '%\n' +
@@ -1502,8 +1503,8 @@ function renderDepositCards(records){
   container.innerHTML=html;
 }
 
-function processMaturity(depositRowNo, studentNo, principal, rate){
-  if(!confirm('만기 지급을 처리하겠습니까? 원금+이자가 카드로 입금됩니다.')) return;
+async function processMaturity(depositRowNo, studentNo, principal, rate){
+  if(!await uiConfirm('만기 지급을 처리하겠습니까? 원금+이자가 카드로 입금됩니다.')) return;
   var targetCC = _cc || _adminCC;
   showLoading();
   google.script.run
@@ -1516,8 +1517,8 @@ function processMaturity(depositRowNo, studentNo, principal, rate){
     .redeemDepositByBanker(targetCC, studentNo, depositRowNo);
 }
 
-function cancelDeposit(depositRowNo, studentNo, principal){
-  if(!confirm('중도 해지 시 이자는 지급되지 않습니다. 원금(' + Number(principal).toLocaleString() + ' 머니)만 반환하시겠습니까?')) return;
+async function cancelDeposit(depositRowNo, studentNo, principal){
+  if(!await uiConfirm('중도 해지 시 이자는 지급되지 않습니다. 원금(' + Number(principal).toLocaleString() + ' 머니)만 반환하시겠습니까?')) return;
   var targetCC = _cc || _adminCC;
   showLoading();
   google.script.run
@@ -1530,8 +1531,8 @@ function cancelDeposit(depositRowNo, studentNo, principal){
     .cancelDepositByBanker(targetCC, studentNo, depositRowNo);
 }
 
-function deleteDeposit(rowNo, studentNo){
-  if(!confirm('이 예금 기록을 삭제하시겠습니까?\n\n아직 진행 중인 예금이면 원금이 학생 카드로 돌아갑니다(이자는 없음).\n삭제된 기록은 복구할 수 없습니다.')) return;
+async function deleteDeposit(rowNo, studentNo){
+  if(!await uiConfirm('이 예금 기록을 삭제하시겠습니까?\n\n아직 진행 중인 예금이면 원금이 학생 카드로 돌아갑니다(이자는 없음).\n삭제된 기록은 복구할 수 없습니다.')) return;
   var targetCC = _cc || _adminCC;
   showLoading();
   google.script.run
@@ -1552,7 +1553,7 @@ function checkBankBalances(){
   if(!cc) return alert('학급을 먼저 선택해 주세요.');
   showLoading();
   google.script.run
-    .withSuccessHandler(function(r){
+    .withSuccessHandler(async function(r){
       hideLoading();
       if(!r.success) return alert('⚠️ ' + r.msg);
       var shortTxt = r.short.length
@@ -1563,7 +1564,7 @@ function checkBankBalances(){
       var list = r.fixes.map(function(f){
         return f.studentNo+'번 '+(f.name||'')+' : 은행 '+f.bank.toLocaleString()+' → '+f.should.toLocaleString()+' (카드로 +'+f.extra.toLocaleString()+')';
       }).join('\n');
-      if(!confirm('[은행 잔액 점검]\n\n예금 없이 은행에 남아 있는 돈이 있어요.\n카드로 돌려줄까요?\n\n'+list+shortTxt)) return;
+      if(!await uiConfirm('[은행 잔액 점검]\n\n예금 없이 은행에 남아 있는 돈이 있어요.\n카드로 돌려줄까요?\n\n'+list+shortTxt)) return;
       showLoading();
       google.script.run
         .withSuccessHandler(function(r2){
@@ -1729,7 +1730,7 @@ function pickFineReason(i){
   renderFineReasonChips();
 }
 
-function doFine(){
+async function doFine(){
   var sno=$('fine-stu').value;
   if(!sno)return alert('학생을 선택해 주세요.');
   var reason=_fineReason==='__custom__' ? ($('fine-reason-custom').value||'').trim() : _fineReason;
@@ -1739,7 +1740,7 @@ function doFine(){
   // 경찰서장: 대통령에게 결재 청구만 / 선생님(대통령): 바로 부과
   var direct = _isTeacher===true;
   var label = ($('fine-stu').selectedOptions[0]||{}).textContent || sno+'번';
-  if(!confirm((direct?'[벌금 바로 부과 — 대통령]':'[벌금 결재 청구]')+'\n\n대상: '+label.split('·')[0].trim()+'\n사유: '+reason+'\n벌금: '+Number(amt).toLocaleString()+' 머니\n\n'+
+  if(!await uiConfirm((direct?'[벌금 바로 부과 — 대통령]':'[벌금 결재 청구]')+'\n\n대상: '+label.split('·')[0].trim()+'\n사유: '+reason+'\n벌금: '+Number(amt).toLocaleString()+' 머니\n\n'+
     (direct?'선생님(대통령)이라 결재 없이 바로 부과되고 신용점수 -5점이 반영돼요.':'대통령(선생님)이 승인하면 벌금이 빠지고 신용점수 -5점이 반영돼요.')+'\n진행할까요?')) return;
   showLoading();
   google.script.run.withSuccessHandler(function(r){
@@ -1791,8 +1792,8 @@ function loadFineRequestsMine(){
   .getFineRequests(_cc||_adminCC, '');
 }
 
-function cancelFineReq(id){
-  if(!confirm('이 벌금 청구를 취소할까요?\n(대통령이 아직 결재하지 않은 청구만 취소돼요)')) return;
+async function cancelFineReq(id){
+  if(!await uiConfirm('이 벌금 청구를 취소할까요?\n(대통령이 아직 결재하지 않은 청구만 취소돼요)')) return;
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.success) return alert((r&&r.msg)||'취소하지 못했어요.');
     showToast('↩️ '+r.msg); loadFineRequestsMine();
@@ -1816,8 +1817,8 @@ function loadPoliceAdmin(){
   .getFineRequests(_adminCC||_cc, '');
 }
 
-function approveFineReq(id){
-  if(!confirm('이 벌금을 승인할까요?\n학생 카드에서 벌금이 빠지고 신용점수가 -5점 깎여요.')) return;
+async function approveFineReq(id){
+  if(!await uiConfirm('이 벌금을 승인할까요?\n학생 카드에서 벌금이 빠지고 신용점수가 -5점 깎여요.')) return;
   showLoading();
   google.script.run.withSuccessHandler(function(r){
     hideLoading();
@@ -1826,8 +1827,8 @@ function approveFineReq(id){
   }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); }).approveFineRequest(_adminCC||_cc, id);
 }
 
-function rejectFineReq(id){
-  var why=prompt('반려 이유를 적어 주세요. (없으면 그냥 확인)\n반려하면 돈과 신용점수는 그대로예요.','');
+async function rejectFineReq(id){
+  var why=await uiPrompt('반려 이유를 적어 주세요. (없으면 그냥 확인)\n반려하면 돈과 신용점수는 그대로예요.','');
   if(why===null) return;
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.success) return alert((r&&r.msg)||'반려하지 못했어요.');
@@ -2084,9 +2085,9 @@ function saveFineEdit(idx){
     .editFineReason(targetCC, item.rowNo, newReason);
 }
 
-function doDeleteFine(idx){
+async function doDeleteFine(idx){
   var item=_fineLogData[idx]; if(!item) return;
-  if(!confirm(
+  if(!await uiConfirm(
     '[벌금 취소 확인]\n\n'+
     '학생: '+item.name+' ('+item.sno+'번)\n'+
     '사유: '+item.reason+'\n'+
@@ -2161,8 +2162,8 @@ function doAddRealEstate(){
   }).addRealEstate(_cc,no,name,type,price,rent);
 }
 
-function doBuyRE(assetNo){
-  if(!confirm('이 부동산을 구매하겠습니까?'))return;
+async function doBuyRE(assetNo){
+  if(!await uiConfirm('이 부동산을 구매하겠습니까?'))return;
   google.script.run.withSuccessHandler(function(r){
     if(r.success){showToast('✅ '+r.msg);$('s-card').textContent=Number(r.newCard).toLocaleString()+' 머니';loadRealEstate();}
     else alert(r.msg);
@@ -2313,10 +2314,10 @@ function saveCreditMgr(sno, name){
     .savePendingCredit(targetCC, sno, name, delta);
 }
 
-function submitCreditReportUI(){
+async function submitCreditReportUI(){
   var pendingCount=Object.keys(_creditPendingMap).length;
   if(pendingCount===0) return showToast('⚠️ 보고할 내역이 없습니다.');
-  if(!confirm('대통령 정기 보고를 제출하시겠습니까?\n\n대기중인 '+pendingCount+'건이 마스터 관리로 전달됩니다.')) return;
+  if(!await uiConfirm('대통령 정기 보고를 제출하시겠습니까?\n\n대기중인 '+pendingCount+'건이 마스터 관리로 전달됩니다.')) return;
   var targetCC=_cc||_adminCC;
   showLoading();
   google.script.run
@@ -2411,8 +2412,8 @@ function renderCreditReportList(list){
   container.innerHTML=h;
 }
 
-function approveCreditItem(rowNo){
-  if(!confirm('이 신용점수 조정을 승인하시겠습니까?')) return;
+async function approveCreditItem(rowNo){
+  if(!await uiConfirm('이 신용점수 조정을 승인하시겠습니까?')) return;
   var targetCC=_adminCC||_cc;
   showLoading();
   google.script.run
@@ -2421,8 +2422,8 @@ function approveCreditItem(rowNo){
     .approvePendingCredit(targetCC, rowNo);
 }
 
-function rejectCreditItem(rowNo){
-  if(!confirm('이 신용점수 조정을 반려하시겠습니까?\n반려 시 신용위원장 패널에 다시 표시됩니다.')) return;
+async function rejectCreditItem(rowNo){
+  if(!await uiConfirm('이 신용점수 조정을 반려하시겠습니까?\n반려 시 신용위원장 패널에 다시 표시됩니다.')) return;
   var targetCC=_adminCC||_cc;
   showLoading();
   google.script.run
@@ -2431,8 +2432,8 @@ function rejectCreditItem(rowNo){
     .rejectPendingCredit(targetCC, rowNo);
 }
 
-function approveAllCreditReport(){
-  if(!confirm('보고된 모든 신용점수 조정을 일괄 승인하시겠습니까?')) return;
+async function approveAllCreditReport(){
+  if(!await uiConfirm('보고된 모든 신용점수 조정을 일괄 승인하시겠습니까?')) return;
   var targetCC=_adminCC||_cc;
   showLoading();
   google.script.run
@@ -2561,8 +2562,8 @@ function saveCreditGradeSettings(){
 }
 
 // ── 기본값 초기화 ──
-function resetGradeSettings(){
-  if(!confirm('기본 등급 설정으로 초기화하시겠습니까?')) return;
+async function resetGradeSettings(){
+  if(!await uiConfirm('기본 등급 설정으로 초기화하시겠습니까?')) return;
   _creditGradeSettings=[
     {grade:1,minScore:90,emoji:'👑'},{grade:2,minScore:80,emoji:'💎'},
     {grade:3,minScore:70,emoji:'🏆'},{grade:4,minScore:60,emoji:'⭐'},
@@ -2607,10 +2608,10 @@ function loadTaxStats(){
   }).getClassStats(_cc);
 }
 
-function doTaxBulkStu(){
+async function doTaxBulkStu(){
   var rate=$('to-rate').value,memo=$('to-memo').value;
   if(!rate||rate<=0)return alert('세율을 입력해 주세요.');
-  if(!confirm('전체 학생에게 세율 '+rate+'% 세금을 부과합니까?'))return;
+  if(!await uiConfirm('전체 학생에게 세율 '+rate+'% 세금을 부과합니까?'))return;
   google.script.run.withSuccessHandler(function(r){
     showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);
   }).chargeTaxBulk(_cc,rate,memo||'세금 징수');
@@ -3018,8 +3019,8 @@ function doAddHomework(){
     .addHomework(targetCC, title.trim(), date);
 }
 
-function submitHwReport(hwId){
-  if(!confirm('대통령에게 이 과제의 제출 현황을 보고하시겠습니까?\n보고 후에는 마스터 관리-통계에 표시됩니다.')) return;
+async function submitHwReport(hwId){
+  if(!await uiConfirm('대통령에게 이 과제의 제출 현황을 보고하시겠습니까?\n보고 후에는 마스터 관리-통계에 표시됩니다.')) return;
   var targetCC=_cc||_adminCC;
   showLoading();
 
@@ -3039,12 +3040,12 @@ function submitHwReport(hwId){
   proceedSubmit();
 }
 
-function deleteHwUI(hwId){
+async function deleteHwUI(hwId){
   var _hw = _hwList.find(function(h){ return h.hwId===hwId; });
   if(_hw && (_hw.reportStatus==='보고' || _hw.reportStatus==='승인')){
     return showToast('⚠️ 보고 중이거나 결재 완료된 과제는 삭제할 수 없습니다.');
   }
-  if(!confirm('이 과제 항목을 삭제하시겠습니까?\n모든 제출 현황도 함께 삭제됩니다.')) return;
+  if(!await uiConfirm('이 과제 항목을 삭제하시겠습니까?\n모든 제출 현황도 함께 삭제됩니다.')) return;
   var targetCC=_cc||_adminCC;
   showLoading();
   google.script.run
@@ -3106,8 +3107,8 @@ function renderMasterHwReports(list, nameMap){
 }
 
 // ── 과제 보고 결재 완료 (마스터) ──
-function approveHwReportUI(hwId){
-  if(!confirm('이 과제 보고를 결재 완료하시겠습니까?\n결재 완료 후에는 통계청장이 수정할 수 없습니다.')) return;
+async function approveHwReportUI(hwId){
+  if(!await uiConfirm('이 과제 보고를 결재 완료하시겠습니까?\n결재 완료 후에는 통계청장이 수정할 수 없습니다.')) return;
   var targetCC=_adminCC||_cc;
   showLoading();
   google.script.run
@@ -3121,8 +3122,8 @@ function approveHwReportUI(hwId){
 }
 
 // ── 과제 보고 반려 (마스터) ──
-function rejectHwReportUI(hwId){
-  if(!confirm('이 과제 보고를 반려하시겠습니까?\n반려 시 통계청장이 다시 수정 후 재보고할 수 있습니다.')) return;
+async function rejectHwReportUI(hwId){
+  if(!await uiConfirm('이 과제 보고를 반려하시겠습니까?\n반려 시 통계청장이 다시 수정 후 재보고할 수 있습니다.')) return;
   var targetCC=_adminCC||_cc;
   showLoading();
   google.script.run
@@ -3465,12 +3466,12 @@ function submitTreasuryEdit(){
     .editTreasuryRecord(targetCC, rowNo, date, memo, type, amt, _isTeacher===true);
 }
 
-function deleteTreasuryUI(rowNo){
+async function deleteTreasuryUI(rowNo){
   var all=(_allTreasuryList||[]).concat(typeof _allTeacherTreasuryList!=='undefined'?(_allTeacherTreasuryList||[]):[]);
   var d=all.find(function(x){ return String(x.rowNo)===String(rowNo); });
   var what = d ? '\n\n'+d.date+' · '+d.memo+' · '+(d.type==='수입'?'+':'-')+Number(d.amount).toLocaleString()+' 머니' : '';
   var extra = d && d.status==='승인' ? '\n\n승인된 기록이라 지우면 국고 잔액도 그만큼 바뀝니다.' : '';
-  if(!confirm('이 국고 기록을 삭제하시겠습니까?'+what+extra)) return;
+  if(!await uiConfirm('이 국고 기록을 삭제하시겠습니까?'+what+extra)) return;
   var targetCC = _cc || _adminCC;
   showLoading();
   google.script.run
@@ -3483,8 +3484,8 @@ function deleteTreasuryUI(rowNo){
     .deleteTreasuryRecord(targetCC, rowNo, _isTeacher===true);
 }
 
-function approveRecordUI(rowNo){
-  if(!confirm('이 기록을 승인하여 국고에 반영하시겠습니까?')) return;
+async function approveRecordUI(rowNo){
+  if(!await uiConfirm('이 기록을 승인하여 국고에 반영하시겠습니까?')) return;
   var targetCC = _adminCC || _cc;
   showLoading();
   google.script.run
@@ -3497,8 +3498,8 @@ function approveRecordUI(rowNo){
     .approveTreasuryRecord(targetCC, rowNo);
 }
 
-function rejectRecordUI(rowNo){
-  if(!confirm('이 기록을 반려하시겠습니까?')) return;
+async function rejectRecordUI(rowNo){
+  if(!await uiConfirm('이 기록을 반려하시겠습니까?')) return;
   var targetCC = _adminCC || _cc;
   showLoading();
   google.script.run
@@ -3676,10 +3677,10 @@ function addSalaryJob(){
   showToast('✅ '+name+' 직업이 추가되었습니다.');
 }
 
-function deleteSalaryJob(idx){
+async function deleteSalaryJob(idx){
   var job=_salaryJobs[idx];
   if(_DEFAULT_JOBS.indexOf(job)!==-1) return showToast('⚠️ 기본 직업은 삭제할 수 없습니다.');
-  if(!confirm('"'+job+'" 직업을 급여표에서 삭제하시겠습니까?')) return;
+  if(!await uiConfirm('"'+job+'" 직업을 급여표에서 삭제하시겠습니까?')) return;
   delete _salaryTable[job]; _salaryJobs.splice(idx,1);
   renderSalaryTableUI();
 }
@@ -3805,8 +3806,8 @@ function savePayrollOrder(){
     .withFailureHandler(function(e){ alert('순서 저장 오류: '+e.message); })
     .setStudentOrder(_adminCC, JSON.stringify(order));
 }
-function resetPayrollOrder(){
-  if(!confirm('학생 순서를 번호순으로 되돌릴까요?\n(0번 선생님은 맨 아래)')) return;
+async function resetPayrollOrder(){
+  if(!await uiConfirm('학생 순서를 번호순으로 되돌릴까요?\n(0번 선생님은 맨 아래)')) return;
   _studentOrder = [];
   google.script.run.withSuccessHandler(function(r){
     showToast(r && r.success ? '🔢 번호순으로 되돌렸어요.' : '⚠️ '+((r&&r.msg)||'되돌리지 못했어요.'));
@@ -4029,11 +4030,11 @@ function toggleAllStudents(){
 }
 
 // 선택 학생 일괄 삭제
-function doDelSelected(){
+async function doDelSelected(){
   var selected=[];
   document.querySelectorAll('.stu-check:checked').forEach(function(cb){ selected.push(cb.value); });
   if(!selected.length) return alert('삭제할 학생을 선택해 주세요.');
-  if(!confirm(selected.length+'명의 학생을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
+  if(!await uiConfirm(selected.length+'명의 학생을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
   showLoading();
   google.script.run
     .withSuccessHandler(function(r){
@@ -4058,12 +4059,12 @@ function doUpdateCode(sno){
     .updateStudentCode(_adminCC, sno, code);
 }
 
-function resetSmartPayroll(){
-  if(!confirm('모든 입력값을 급여표 기준으로 초기화하시겠습니까?')) return;
+async function resetSmartPayroll(){
+  if(!await uiConfirm('모든 입력값을 급여표 기준으로 초기화하시겠습니까?')) return;
   renderSmartPayrollTable(); showToast('✅ 초기화 완료');
 }
 
-function executeSmartPayrollUI(){
+async function executeSmartPayrollUI(){
   if(!_payrollList.length) return alert('학생 목록이 없습니다. 급여 지급 탭을 다시 열어 주세요.');
   if(document.activeElement && document.activeElement.blur) document.activeElement.blur(); // 입력 중인 칸 값 확정
   var cols=getEffectiveCols();
@@ -4082,7 +4083,7 @@ function executeSmartPayrollUI(){
   });
   if(!payroll.length) return alert('지급할 금액이 없습니다.\n기본급이나 항목 금액을 입력해 주세요.');
   var preview=lines.slice(0,12).join('\n')+(lines.length>12?'\n… 외 '+(lines.length-12)+'명':'');
-  if(!confirm('[스마트 월급 지급]\n\n'+preview+'\n\n총 '+payroll.length+'명 · 합계 '+total.toLocaleString()+' 머니\n카드로 입금할까요?')) return;
+  if(!await uiConfirm('[스마트 월급 지급]\n\n'+preview+'\n\n총 '+payroll.length+'명 · 합계 '+total.toLocaleString()+' 머니\n카드로 입금할까요?')) return;
   var btn=$('sp-run-btn'); if(btn) btn.disabled=true;
   showLoading();
   google.script.run
@@ -4308,9 +4309,9 @@ function doUpdateWsStock(idx){
     .updateWholesaleItemStock(targetCC, targetSno, item.rowNo, el.value);
 }
 
-function doDeleteWsItem(idx){
+async function doDeleteWsItem(idx){
   var item=_wsItemsData[idx]; if(!item) return;
-  if(!confirm('"'+item.name+'" 상품을 삭제하시겠습니까?')) return;
+  if(!await uiConfirm('"'+item.name+'" 상품을 삭제하시겠습니까?')) return;
   var targetCC=_cc||_adminCC, targetSno=_sno||_testStudentNo||'';
   showLoading();
   google.script.run
@@ -4463,7 +4464,7 @@ function calcWsTotal(){
 }
 
 // ── 판매 저장 ──
-function doWsSale(){
+async function doWsSale(){
   var targetCC  = _cc || _adminCC;
   var targetSno = _sno || _testStudentNo || ''; // ★ 비어있으면 교사 모드
 
@@ -4484,7 +4485,7 @@ function doWsSale(){
   var buyerLabel = ($('ws-buyer-label')||{}).textContent || '';
   var sellerLabel= targetSno ? targetSno+'번' : '교사(마스터)';
 
-  if(!confirm(
+  if(!await uiConfirm(
     '[판매 확인]\n\n판매자: '+sellerLabel+
     '\n구매자: '+buyerLabel+
     '\n상품: '+itemName+' × '+qty+'개'+
@@ -4603,10 +4604,10 @@ function saveWsLogMemo(idx){
     .editWholesaleSaleMemo(targetCC, targetSno, idx, memo);
 }
 
-function deleteWsLog(idx){
+async function deleteWsLog(idx){
   var sale=_wsSalesData[idx];
   if(!sale) return;
-  if(!confirm(
+  if(!await uiConfirm(
     '[삭제 및 환불 확인]\n\n'+
     '상품: '+sale.itemName+' × '+sale.quantity+'개\n'+
     '구매자: '+sale.buyerName+' ('+sale.buyerNo+'번)\n'+
@@ -4689,9 +4690,9 @@ function loadWsCorpTaxThenRender(){
 }
 
 // ★ 납부 완료 버튼 클릭 핸들러
-function payWsCorpTax(){
+async function payWsCorpTax(){
   if(_wsCorpTaxAccrued<=0) return showToast('⚠️ 납부할 환수금이 없습니다.');
-  if(!confirm('현재 적립된 '+Number(_wsCorpTaxAccrued).toLocaleString()+' 머니를 국고에 납부하시겠습니까?\n납부 후 적립액은 0원으로 초기화되고, 국세청 세금 내역에 자동 등록됩니다.')) return;
+  if(!await uiConfirm('현재 적립된 '+Number(_wsCorpTaxAccrued).toLocaleString()+' 머니를 국고에 납부하시겠습니까?\n납부 후 적립액은 0원으로 초기화되고, 국세청 세금 내역에 자동 등록됩니다.')) return;
   var targetCC=_cc||_adminCC, targetSno=_sno||_testStudentNo||'';
   showLoading();
   google.script.run
@@ -4824,11 +4825,11 @@ function loadFullLog(){
 }
 
 // ── 학급 전체 초기화 (2단계 확인) ──
-function doResetClassEconomy(){
+async function doResetClassEconomy(){
   var targetCC = _adminCC || _cc;
   if(!targetCC) return alert('학급을 먼저 선택해 주세요.');
 
-  if(!confirm(
+  if(!await uiConfirm(
     '⚠️ [학급 전체 초기화]\n\n'+
     '다음 항목이 모두 초기화됩니다:\n'+
     '• 전체 학생의 카드·은행 잔액 → 0\n'+
@@ -4843,7 +4844,7 @@ function doResetClassEconomy(){
     '계속하시겠습니까?'
   )) return;
 
-  if(!confirm('❗ 마지막 확인입니다.\n\n이 작업은 되돌릴 수 없습니다.\n정말 학급을 처음 상태로 초기화하시겠습니까?')) return;
+  if(!await uiConfirm('❗ 마지막 확인입니다.\n\n이 작업은 되돌릴 수 없습니다.\n정말 학급을 처음 상태로 초기화하시겠습니까?')) return;
 
   showLoading();
   google.script.run
@@ -4997,11 +4998,11 @@ function saveEditLog(rowNo){
     .editActivityLogMemo(_adminCC, rowNo, newMemo);
 }
 
-function deleteLog(rowNo){
+async function deleteLog(rowNo){
   var found=_fullLogData.find(function(r){ return r.rowNo===rowNo; });
   var name=found?found.name+' ('+found.sno+'번)':'';
   var memo=found?found.memo:'';
-  if(!confirm('[삭제 확인]\n\n학생: '+name+'\n내역: '+memo+'\n\n⚠️ 삭제 시 카드 잔액이 자동으로 복원됩니다.\n계속 진행하시겠습니까?')) return;
+  if(!await uiConfirm('[삭제 확인]\n\n학생: '+name+'\n내역: '+memo+'\n\n⚠️ 삭제 시 카드 잔액이 자동으로 복원됩니다.\n계속 진행하시겠습니까?')) return;
   showLoading();
   google.script.run
     .withSuccessHandler(function(r){

@@ -84,8 +84,8 @@
   }
 
   // 직접 돌리기 (선생님)
-  window.stkRunStep = function () {
-    if (!confirm('주식 가격을 지금 한 번 바꿀까요?\n종목마다 정해 둔 변동 폭 안에서 무작위로 오르거나 내려요.\n(% 고정을 켠 종목은 고정한 값만큼 바뀌어요.)')) return;
+  window.stkRunStep = async function () {
+    if (!await uiConfirm('주식 가격을 지금 한 번 바꿀까요?\n종목마다 정해 둔 변동 폭 안에서 무작위로 오르거나 내려요.\n(% 고정을 켠 종목은 고정한 값만큼 바뀌어요.)')) return;
     if (typeof showLoading === 'function') showLoading();
     google.script.run.withSuccessHandler(function (r) {
       if (typeof hideLoading === 'function') hideLoading();
@@ -334,7 +334,7 @@
     box.innerHTML = h;
   }
 
-  window.stkTrade = function (side) {
+  window.stkTrade = async function (side) {
     var who = ($('stk-customer') || {}).value;
     var id = ($('stk-stock') || {}).value, qty = parseInt(($('stk-qty') || {}).value) || 0;
     if (!who) return alert('고객을 선택해 주세요.');
@@ -342,7 +342,7 @@
     var s = null; market.stocks.forEach(function (x) { if (x.id === id) s = x; });
     if (!s) return alert('종목을 골라 주세요.');
     var label = ($('stk-customer').selectedOptions[0] || {}).textContent || who + '번';
-    if (!confirm('[' + (side === 'buy' ? '사기 (매수)' : '팔기 (매도)') + ']\n\n고객: ' + label.split('·')[0].trim() + '\n종목: ' + s.emoji + ' ' + s.name +
+    if (!await uiConfirm('[' + (side === 'buy' ? '사기 (매수)' : '팔기 (매도)') + ']\n\n고객: ' + label.split('·')[0].trim() + '\n종목: ' + s.emoji + ' ' + s.name +
       '\n수량: ' + qty + '주\n지금 가격: 1주 ' + won(s.price) + '\n금액: ' + won(s.price * qty) + '\n\n진행할까요?')) return;
     if (typeof showLoading === 'function') showLoading();
     var operator = (typeof _sno !== 'undefined' && _sno) || '교사';
@@ -420,26 +420,26 @@
 
   // % 고정 / 고정 해제 (누르면 바로 저장)
   function saRow(i) { return document.querySelectorAll('#sa-stocks .sa-row[data-id]')[i]; }
-  window.stockAdminFix = function (i) {
+  window.stockAdminFix = async function (i) {
     var row = saRow(i); if (!row) return;
     var inp = row.querySelector('.sa-fixed-pct'), name = (row.querySelector('.sa-name') || {}).value || '이 종목';
     var v = (inp.value || '').trim();
     if (v === '') { inp.focus(); return alert(name + ': 고정할 %를 먼저 적어 주세요. (예: 5 → 매번 +5%, -3 → 매번 -3%)'); }
     var n = parseFloat(v);
     if (isNaN(n) || n < -30 || n > 30) return alert(name + ': 고정 %는 -30 ~ 30 사이 숫자로 적어 주세요.');
-    if (!confirm(name + '을(를) 매번 ' + (n > 0 ? '+' : '') + n + '%로 고정할까요?\n고정을 해제할 때까지 직접 돌리기·자동 돌리기 모두 이 값으로 바뀌어요.')) return;
+    if (!await uiConfirm(name + '을(를) 매번 ' + (n > 0 ? '+' : '') + n + '%로 고정할까요?\n고정을 해제할 때까지 직접 돌리기·자동 돌리기 모두 이 값으로 바뀌어요.')) return;
     stockAdminSave();
   };
-  window.stockAdminUnfix = function (i) {
+  window.stockAdminUnfix = async function (i) {
     var row = saRow(i); if (!row) return;
     var name = (row.querySelector('.sa-name') || {}).value || '이 종목';
-    if (!confirm(name + '의 % 고정을 해제할까요?\n다음부터는 최소~최대 사이에서 랜덤으로 바뀌어요.')) return;
+    if (!await uiConfirm(name + '의 % 고정을 해제할까요?\n다음부터는 최소~최대 사이에서 랜덤으로 바뀌어요.')) return;
     row.querySelector('.sa-fixed-pct').value = '';
     stockAdminSave();
   };
 
-  window.stockAdminRun = function () {
-    if (!confirm('주식 가격을 지금 한 번 바꿀까요?\n종목마다 정해 둔 변동 폭 안에서 무작위로 오르거나 내려요.\n(% 고정을 켠 종목은 고정한 값만큼 바뀌어요.)')) return;
+  window.stockAdminRun = async function () {
+    if (!await uiConfirm('주식 가격을 지금 한 번 바꿀까요?\n종목마다 정해 둔 변동 폭 안에서 무작위로 오르거나 내려요.\n(% 고정을 켠 종목은 고정한 값만큼 바뀌어요.)')) return;
     if (typeof showLoading === 'function') showLoading();
     google.script.run.withSuccessHandler(function (r) {
       if (typeof hideLoading === 'function') hideLoading();

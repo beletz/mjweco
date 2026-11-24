@@ -390,9 +390,9 @@
   };
   window.avatarReset = function () { st.draft = JSON.parse(JSON.stringify(st.saved)); renderPreview(); renderItems(); };
 
-  window.avatarBuy = function (id) {
+  window.avatarBuy = async function (id) {
     var it = st.byId[id]; if (!it) return;
-    if (!confirm('[아바타 아이템 구매]\n\n' + it.name + '\n가격: ' + money(it.price) + '\n내 카드 잔액: ' + money(st.card) + '\n\n살까요?')) return;
+    if (!await uiConfirm('[아바타 아이템 구매]\n\n' + it.name + '\n가격: ' + money(it.price) + '\n내 카드 잔액: ' + money(st.card) + '\n\n살까요?')) return;
     call('buyAvatarItem', st.cc, st.sno, id).then(function (r) {
       if (!r.success) return alert(r.msg);
       st.owned = r.owned; st.card = r.newCard;

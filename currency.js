@@ -146,13 +146,13 @@
   setInterval(watch, 1000);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
 
-  window.saveCurrencyName = function () {
+  window.saveCurrencyName = async function () {
     var cc = (typeof _adminCC !== 'undefined' && _adminCC) || curCC();
     var inp = $('cur-new');
     var name = (inp.value || '').trim();
     if (!name) return alert('새 화폐 이름을 입력해 주세요.');
     if (name.length > 10) return alert('화폐 이름은 10자 이내로 입력해 주세요.');
-    if (!confirm("화폐 이름을 '" + name + "'(으)로 바꿀까요?\n홈페이지에 나오는 돈 이름이 모두 바뀝니다.")) return;
+    if (!await uiConfirm("화폐 이름을 '" + name + "'(으)로 바꿀까요?\n홈페이지에 나오는 돈 이름이 모두 바뀝니다.")) return;
     if (typeof showLoading === 'function') showLoading();
     google.script.run
       .withSuccessHandler(function (r) {
@@ -160,8 +160,9 @@
         if (!r || !r.success) return alert((r && r.msg) || '저장하지 못했습니다.');
         try { localStorage.setItem(CACHE_PREFIX + cc, r.name); } catch (e) {}
         inp.value = '';
-        alert(r.msg);
-        apply(r.name);
+        // 화면을 새로 불러올 수도 있으니, 알림창의 확인을 누른 뒤에 적용
+        if (typeof window.uiAlert === 'function') window.uiAlert(r.msg).then(function () { apply(r.name); });
+        else { alert(r.msg); apply(r.name); }
       })
       .withFailureHandler(function (err) {
         if (typeof hideLoading === 'function') hideLoading();
