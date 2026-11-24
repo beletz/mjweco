@@ -981,7 +981,7 @@ function openStudentPanel(viewId){
     console.error('누락된 뷰: '+viewId);
     return;
   }
-  if(viewId==='view-police')      { loadFineStudents(); loadFineLog(); }
+  if(viewId==='view-police')      { loadFineStudents(); loadFineLog(); loadFineLawChips(); }
   if(viewId==='view-credit-mgr')  { loadCreditMgrList(); }
   if(viewId==='view-tax-office')  { loadTaxOfficeDashboard(); }
   if(viewId==='view-asset-inspect'){ loadAssetInspect(); }
@@ -1516,16 +1516,69 @@ function loadFineStudents(){
   }).getStudentList(_cc);
 }
 
-function fineReasonChange(){
+// ── 경찰서 탭 ──
+function policeTab(panelId, el){
+  document.querySelectorAll('#pol-tabs .panel-tab').forEach(function(t){t.classList.remove('act');});
+  document.querySelectorAll('#pol-panels > .panel-content').forEach(function(c){c.classList.remove('act');});
+  el.classList.add('act');
+  $(panelId).classList.add('act');
+  if(panelId==='pol-fine'){ loadFineLawChips(); loadFineLog(); }
+  if(panelId==='pol-law') loadFineLawView();
+  if(panelId==='pol-record') loadFineRecords();
+}
+
+// ── 위반 사유 버튼 (벌칙 법전과 연동) ──
+var FINE_DEFAULT_REASONS=['수업 방해','숙제 미제출','지각','규정 위반']; // 법전이 비어 있을 때 보여 줄 기본 버튼
+var _fineLaw=[];
+var _fineReason='';   // 고른 위반 사유 ('__custom__' = 직접 입력)
+
+function loadFineLawChips(){
+  google.script.run.withSuccessHandler(function(r){
+    _fineLaw=(r&&r.success&&r.list)||[];
+    renderFineReasonChips();
+  }).withFailureHandler(function(){ renderFineReasonChips(); }).getFineLaw(_cc||_adminCC);
+}
+
+// 위반 사유 목록(드롭다운): 법전 조항 + 맨 아래 "직접 입력"
+function renderFineReasonChips(){
+  var sel=$('fine-reason-sel'); if(!sel) return;
+  var items=_fineLaw.length ? _fineLaw : FINE_DEFAULT_REASONS.map(function(n){ return {name:n, price:0}; });
+  var h='<option value="">-- 위반 사유를 고르세요 --</option>';
+  items.forEach(function(m,i){
+    h+='<option value="'+i+'">'+esc(m.name)+(Number(m.price)>0?' ('+Number(m.price).toLocaleString()+' 머니)':'')+'</option>';
+  });
+  h+='<option value="-1">✏️ 직접 입력...</option>';
+  sel.innerHTML=h;
+  var idx=items.findIndex(function(m){ return m.name===_fineReason; });
+  sel.value=_fineReason==='__custom__' ? '-1' : (idx>=0 ? String(idx) : '');
+  $('fine-reason-custom').style.display=_fineReason==='__custom__'?'block':'none';
+}
+
+function pickFineReasonSel(){
   var v=$('fine-reason-sel').value;
-  $('fine-reason-custom').style.display=(v==='직접입력')?'block':'none';
+  if(v===''){ _fineReason=''; renderFineReasonChips(); return; }
+  pickFineReason(parseInt(v,10));
+}
+
+function pickFineReason(i){
+  if(i<0){
+    _fineReason='__custom__';
+    renderFineReasonChips();
+    var c=$('fine-reason-custom'); if(c) c.focus();
+    return;
+  }
+  var items=_fineLaw.length ? _fineLaw : FINE_DEFAULT_REASONS.map(function(n){ return {name:n, price:0}; });
+  var m=items[i]; if(!m) return;
+  _fineReason=m.name;
+  if(Number(m.price)>0) $('fine-amt').value=m.price; // 법전 금액을 넣어 줌 (고쳐 쓸 수 있음)
+  renderFineReasonChips();
 }
 
 function doFine(){
   var sno=$('fine-stu').value;
   if(!sno)return alert('학생을 선택해 주세요.');
-  var reasonSel=$('fine-reason-sel').value;
-  var reason=reasonSel==='직접입력'?$('fine-reason-custom').value:reasonSel;
+  var reason=_fineReason==='__custom__' ? ($('fine-reason-custom').value||'').trim() : _fineReason;
+  if(!reason) return alert(_fineReason==='__custom__' ? '위반 사유를 직접 적어 주세요.' : '위반 사유를 골라 주세요.');
   var amt=$('fine-amt').value;
   if(!amt||amt<=0)return alert('벌금 금액을 입력해 주세요.');
   showLoading();
@@ -1534,6 +1587,8 @@ function doFine(){
     if(r.success){
       showToast('✅ '+r.msg);
       $('fine-amt').value='';
+      $('fine-reason-custom').value='';
+      _fineReason=''; renderFineReasonChips();
       loadFineLog(); // ★ 저장 후 즉시 새로고침
     } else {
       alert(r.msg);
@@ -1544,6 +1599,143 @@ function doFine(){
 }
 
 var _fineLogData = [];
+
+// ── 벌칙 법전 (보기: 모두 / 적기: 선생님만) ──
+var _flawRows=[];
+function loadFineLawView(){
+  var box=$('flaw-view'); if(!box) return;
+  var wrap=$('flaw-editor-wrap'); if(wrap) wrap.style.display=_isTeacher?'block':'none';
+  box.innerHTML='<div class="empty-msg">불러오는 중...</div>';
+  google.script.run.withSuccessHandler(function(r){
+    _fineLaw=(r&&r.success&&r.list)||[];
+    if(_isTeacher){
+      _flawRows=_fineLaw.map(function(m){ return {name:m.name||'',price:m.price||'',desc:m.desc||''}; });
+      if(!_flawRows.length) _flawRows.push({name:'',price:'',desc:''});
+      renderFineLawEditor();
+    }
+    if(!_fineLaw.length){
+      box.innerHTML='<div style="text-align:center;padding:50px;color:#94A3B8;"><div style="font-size:44px;margin-bottom:10px;">📜</div>아직 벌칙 법전이 없어요.<br>'+(_isTeacher?'위의 "벌칙 법전 적기"에서 조항을 적어 주세요.':'선생님이 법전을 적으면 여기에 보여요.')+'</div>';
+      return;
+    }
+    var h='<div class="flaw-list">';
+    _fineLaw.forEach(function(m,i){
+      h+='<div class="flaw-item">';
+      h+='<div class="flaw-no">제'+(i+1)+'조</div>';
+      h+='<div class="flaw-body"><div class="flaw-name">'+esc(m.name)+'</div>'+(m.desc?'<div class="flaw-desc">'+esc(m.desc)+'</div>':'')+'</div>';
+      h+='<div class="flaw-amt">'+(Number(m.price)>0?'벌금 '+Number(m.price).toLocaleString()+' 머니':'벌금 금액 직접 정함')+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+    box.innerHTML=h;
+    if(typeof salMotion==='function') salMotion(box.querySelectorAll('.flaw-item'), 10);
+  }).withFailureHandler(function(err){ box.innerHTML='<div class="empty-msg">불러오지 못했어요: '+esc(err.message)+'</div>'; })
+  .getFineLaw(_cc||_adminCC);
+}
+
+function _flawCollect(){
+  _flawRows=_flawRows.map(function(_,i){
+    return { name:(($('fl-name-'+i)||{}).value||'').trim(), price:(($('fl-price-'+i)||{}).value||''), desc:(($('fl-desc-'+i)||{}).value||'').trim() };
+  });
+}
+
+function renderFineLawEditor(){
+  var box=$('flaw-editor'); if(!box) return;
+  var inp='padding:9px 11px;border:2px solid #E2E8F0;border-radius:10px;font-size:15px;font-family:inherit;outline:none;box-sizing:border-box;';
+  var h='<div class="tm-row tm-head"><div>위반 사유</div><div>벌금 (머니)</div><div>설명</div><div></div></div>';
+  _flawRows.forEach(function(m,i){
+    h+='<div class="tm-row">';
+    h+='<input id="fl-name-'+i+'" maxlength="40" placeholder="예: 수업 방해" value="'+esc(m.name)+'" style="'+inp+'">';
+    h+='<input id="fl-price-'+i+'" type="number" min="0" placeholder="금액" value="'+esc(m.price)+'" style="'+inp+'">';
+    h+='<input id="fl-desc-'+i+'" class="tm-desc" maxlength="100" placeholder="설명 (예: 수업 중 떠들어 친구를 방해함)" value="'+esc(m.desc)+'" style="'+inp+'">';
+    h+='<button onclick="removeFineLawRow('+i+')" title="이 조항 지우기" style="background:#FFF5F5;color:#EF4444;border:1.5px solid #FECACA;border-radius:10px;cursor:pointer;font-size:14px;">✕</button>';
+    h+='</div>';
+  });
+  box.innerHTML=h;
+}
+
+function addFineLawRow(){
+  _flawCollect(); _flawRows.push({name:'',price:'',desc:''}); renderFineLawEditor();
+  var el=$('fl-name-'+(_flawRows.length-1)); if(el) el.focus();
+}
+function removeFineLawRow(i){
+  _flawCollect(); _flawRows.splice(i,1);
+  if(!_flawRows.length) _flawRows.push({name:'',price:'',desc:''});
+  renderFineLawEditor();
+}
+
+function saveFineLaw(){
+  _flawCollect();
+  var list=_flawRows.filter(function(m){ return m.name; });
+  var noName=_flawRows.filter(function(m){ return !m.name && (m.price!==''||m.desc); }).length;
+  if(noName) return alert('위반 사유가 비어 있는 줄이 '+noName+'개 있어요. 사유를 적거나 ✕로 지워 주세요.');
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    hideLoading();
+    showToast(r&&r.success?'✅ '+r.msg:'⚠️ '+((r&&r.msg)||'저장하지 못했습니다.'));
+    if(r&&r.success){ loadFineLawView(); _fineLaw=r.list||[]; renderFineReasonChips(); }
+  }).withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
+  .setFineLaw(_cc||_adminCC, JSON.stringify(list));
+}
+
+// ── 학생별 위반(전과) 기록: 벌금 내역을 학생별로 묶어서 보여 줌 ──
+var _fineRecGroups=[], _fineRecOpen={};
+function loadFineRecords(){
+  var box=$('frec-list'); if(!box) return;
+  box.innerHTML='<div class="empty-msg">불러오는 중...</div>';
+  var cc=_cc||_adminCC;
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success){ box.innerHTML='<div class="empty-msg">오류: '+esc((r&&r.msg)||'')+'</div>'; return; }
+    var map={};
+    (r.list||[]).forEach(function(f){
+      var k=String(f.sno);
+      if(!map[k]) map[k]={sno:k, name:f.name||'', items:[], total:0};
+      map[k].items.push(f);
+      map[k].total+=Number(f.expense)||0;
+    });
+    _fineRecGroups=Object.keys(map).map(function(k){
+      var g=map[k];
+      g.items.sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+      g.last=g.items[0]?g.items[0].date:'';
+      return g;
+    }).sort(function(a,b){ return b.items.length-a.items.length || b.total-a.total || Number(a.sno)-Number(b.sno); });
+    renderFineRecords();
+  }).withFailureHandler(function(err){ box.innerHTML='<div class="empty-msg">오류: '+esc(err.message)+'</div>'; })
+  .getAllFines(cc);
+}
+
+function toggleFineRecord(sno){ _fineRecOpen[sno]=!_fineRecOpen[sno]; renderFineRecords(); }
+
+function renderFineRecords(){
+  var box=$('frec-list'); if(!box) return;
+  var kw=(($('frec-search')||{}).value||'').trim().toLowerCase();
+  var list=_fineRecGroups.filter(function(g){ return !kw || String(g.name).toLowerCase().indexOf(kw)!==-1 || String(g.sno)===kw; });
+  if($('frec-cnt')) $('frec-cnt').textContent=_fineRecGroups.length+'명';
+  if(!list.length){
+    box.innerHTML='<div style="text-align:center;padding:40px;color:#94A3B8;"><div style="font-size:40px;margin-bottom:8px;">🕊️</div>'+(kw?'찾는 학생의 위반 기록이 없어요.':'아직 벌금을 낸 학생이 없어요.')+'</div>';
+    return;
+  }
+  var h='';
+  list.forEach(function(g){
+    var open=!!_fineRecOpen[g.sno];
+    var lvl=g.items.length>=5?'hi':g.items.length>=3?'mid':'lo';
+    h+='<div class="frec-card frec-'+lvl+'">';
+    h+='<div class="frec-head" onclick="toggleFineRecord(\''+esc(g.sno)+'\')">';
+    h+='<span class="no-bdg">'+esc(g.sno)+'</span>';
+    h+='<div class="frec-name">'+esc(g.name||'(이름없음)')+'<div class="frec-last">최근 위반: '+esc(g.last)+'</div></div>';
+    h+='<div class="frec-stat"><span class="frec-count">위반 '+g.items.length+'회</span><span class="frec-total">-'+g.total.toLocaleString()+' 머니</span></div>';
+    h+='<i class="fa-solid fa-chevron-'+(open?'up':'down')+'" style="color:#94A3B8;"></i>';
+    h+='</div>';
+    if(open){
+      h+='<div class="frec-items">';
+      g.items.forEach(function(f){
+        h+='<div class="frec-item"><span class="frec-date">'+esc(f.date)+'</span><span class="frec-reason">'+esc(f.reason)+'</span><span class="frec-amt">-'+(Number(f.expense)||0).toLocaleString()+' 머니</span></div>';
+      });
+      h+='</div>';
+    }
+    h+='</div>';
+  });
+  box.innerHTML=h;
+}
 
 function loadFineLog(){
   var tb=$('fine-log-tbody');

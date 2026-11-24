@@ -14,7 +14,7 @@
     // 지급·수입·지출
     recordIncome: '지급', recordIncomeBulk: '일괄 지급', recordExpense: '지출 기록', executeSmartPayroll: '월급 지급',
     // 세금·벌금
-    chargeTax: '세금 부과', chargeTaxBulk: '세금 일괄 부과', chargeFine: '벌금 부과', deleteFineRecord: '벌금 기록 삭제', editFineReason: '벌금 사유 수정',
+    chargeTax: '세금 부과', chargeTaxBulk: '세금 일괄 부과', chargeFine: '벌금 부과', setFineLaw: '벌칙 법전 저장', deleteFineRecord: '벌금 기록 삭제', editFineReason: '벌금 사유 수정',
     // 예금
     createDeposit: '예금 가입', createDepositByBankerWithCredit: '예금 가입', redeemDeposit: '예금 해지', redeemDepositByBanker: '예금 해지',
     cancelDepositByBanker: '예금 중도 해지', deleteDepositByBanker: '예금 삭제', editDepositByBanker: '예금 수정',

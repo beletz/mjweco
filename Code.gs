@@ -3147,6 +3147,60 @@ function editWholesaleSaleMemo(classCode, studentNo, saleIndex, newMemo) {
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
+// ==========================================
+// [벌칙 법전] 위반 사유와 벌금 (선생님이 경찰서 → 벌칙 법전 조회에서 적음)
+// FineLaw: [0]학급코드 [1]법전(JSON 배열: {name, price, desc})
+// 경찰서 벌금 부과의 "위반 사유" 버튼으로 그대로 나옵니다.
+// ==========================================
+function getFineLaw(classCode) {
+  try {
+    var cc = cleanText(classCode);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('FineLaw');
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (cleanText(data[i][0]) === cc) {
+          var list = [];
+          try { list = JSON.parse(String(data[i][1] || '[]')); } catch (pe) { list = []; }
+          return { success: true, list: Array.isArray(list) ? list : [] };
+        }
+      }
+    }
+    return { success: true, list: [] };
+  } catch(e) { return { success: false, msg: e.message }; }
+}
+
+function setFineLaw(classCode, lawJson) {
+  try {
+    var cc = cleanText(classCode);
+    if (!cc) return { success: false, msg: "학급 코드가 없습니다. 다시 로그인해 주세요." };
+    var raw = typeof lawJson === 'string' ? JSON.parse(lawJson || '[]') : (lawJson || []);
+    if (!Array.isArray(raw)) return { success: false, msg: "법전 형식이 올바르지 않습니다." };
+    var list = [];
+    raw.forEach(function (m) {
+      var name = String((m && m.name) || '').trim().slice(0, 40);
+      if (!name) return;
+      var price = parseInt(m.price);
+      list.push({ name: name, price: isNaN(price) || price < 0 ? 0 : price, desc: String(m.desc || '').trim().slice(0, 100) });
+    });
+    if (list.length > 50) return { success: false, msg: "벌칙 법전은 50개까지 적을 수 있습니다." };
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('FineLaw');
+    if (!sheet) { sheet = ss.insertSheet('FineLaw'); sheet.appendRow(['학급코드','법전']); }
+    var data = sheet.getDataRange().getValues();
+    var json = JSON.stringify(list);
+    var msg = "벌칙 법전 " + list.length + "개 조항을 저장했습니다!";
+    for (var i = 1; i < data.length; i++) {
+      if (cleanText(data[i][0]) === cc) {
+        sheet.getRange(i + 1, 2).setValue(json);
+        return { success: true, list: list, msg: msg };
+      }
+    }
+    sheet.appendRow([cc, json]);
+    return { success: true, list: list, msg: msg };
+  } catch(e) { return { success: false, msg: "오류: " + e.message }; }
+}
+
 // ── 학급 전체 벌금 내역 조회 (경찰서장용) ──
 function getAllFines(classCode) {
   try {

@@ -1145,6 +1145,47 @@
     </div>
   </div>
   <div style="padding:24px 5%;">
+    <div id="pol-tabs" class="panel-tabs" style="margin-bottom:22px;">
+      <div class="panel-tab act" onclick="policeTab('pol-fine',this)">🚓 벌금 부과 기록</div>
+      <div class="panel-tab" onclick="policeTab('pol-law',this)">📜 벌칙 법전 조회</div>
+      <div class="panel-tab" onclick="policeTab('pol-record',this)">🚨 학생별 위반(전과) 기록</div>
+    </div>
+    <div id="pol-panels">
+    <!-- 탭 2: 벌칙 법전 -->
+    <div id="pol-law" class="panel-content">
+      <div class="sc" id="flaw-editor-wrap" style="display:none;">
+        <div class="st">
+          <i class="fa-solid fa-pen-to-square" style="color:var(--orange);"></i> 벌칙 법전 적기 <span class="pill" style="margin-left:6px;">선생님만</span>
+          <div style="margin-left:auto;display:flex;gap:8px;">
+            <button class="btn btn-outline btn-sm" onclick="addFineLawRow()"><i class="fa-solid fa-plus"></i> 조항 추가</button>
+            <button class="btn btn-green btn-sm" onclick="saveFineLaw()"><i class="fa-solid fa-floppy-disk"></i> 저장</button>
+          </div>
+        </div>
+        <div class="info-box">💡 위반 사유와 벌금을 적어 주세요. 저장하면 벌금 부과의 <b>위반 사유 버튼</b>으로 바로 나옵니다.</div>
+        <div id="flaw-editor"></div>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <div style="font-family:'Jua',sans-serif;font-size:22px;color:#1E293B;">📜 벌칙 법전</div>
+        <div style="font-size:14px;color:#64748B;">우리 반 규칙을 어기면 내야 하는 벌금이에요.</div>
+      </div>
+      <div id="flaw-view"><div class="empty-msg">불러오는 중...</div></div>
+    </div>
+    <!-- 탭 3: 학생별 위반 기록 -->
+    <div id="pol-record" class="panel-content">
+      <div class="sc">
+        <div class="st">
+          <i class="fa-solid fa-user-shield" style="color:var(--red);"></i> 학생별 위반(전과) 기록
+          <span class="pill" id="frec-cnt" style="margin-left:6px;">0명</span>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+            <input id="frec-search" placeholder="이름·번호 검색" oninput="renderFineRecords()" style="padding:7px 12px;border:1.5px solid #E2E8F0;border-radius:20px;font-size:13px;font-family:inherit;outline:none;width:150px;">
+            <button class="btn btn-outline btn-sm" onclick="loadFineRecords()"><i class="fa-solid fa-rotate-right"></i> 새로고침</button>
+          </div>
+        </div>
+        <div id="frec-list"><div class="empty-msg">불러오는 중...</div></div>
+      </div>
+    </div>
+    <!-- 탭 1: 벌금 부과 기록 -->
+    <div id="pol-fine" class="panel-content act">
     <div style="display:grid;grid-template-columns:340px 1fr;gap:18px;">
       <div class="sc">
         <div class="st"><i class="fa-solid fa-gavel" style="color:var(--red);"></i> 벌금 부과</div>
@@ -1152,12 +1193,8 @@
         <div class="ig"><label>대상 학생</label>
           <select id="fine-stu" class="ci" style="margin-bottom:0;"><option value="">-- 학생 선택 --</option></select>
         </div>
-        <div class="ig" style="margin-top:11px;"><label>위반 사유</label>
-          <select id="fine-reason-sel" class="ci" onchange="fineReasonChange()" style="margin-bottom:0;">
-            <option value="수업 방해">수업 방해</option><option value="숙제 미제출">숙제 미제출</option>
-            <option value="지각">지각</option><option value="규정 위반">규정 위반</option>
-            <option value="직접입력">직접 입력...</option>
-          </select>
+        <div class="ig" style="margin-top:11px;"><label>위반 사유 <span style="font-size:12px;color:var(--gray);">(고르면 벌칙 법전 금액이 들어가요)</span></label>
+          <select id="fine-reason-sel" class="ci" onchange="pickFineReasonSel()" style="margin-bottom:0;"></select>
         </div>
         <input class="ci" id="fine-reason-custom" placeholder="위반 사유 직접 입력" style="display:none;margin-top:8px;">
         <div class="amr" style="margin-top:11px;"><input class="ci" id="fine-amt" type="number" placeholder="벌금 금액" min="1" style="margin-bottom:0;"><span class="ul">머니</span></div>
@@ -1190,6 +1227,8 @@
   </div>
 </div><!-- ★ 추가: 두 번째 .sc(최근 벌금 내역) 블록을 닫는 div -->
 </div><!-- /grid -->
+    </div><!-- /pol-fine -->
+    </div><!-- /pol-panels -->
   </div><!-- /padding -->
 </div><!-- /view-police -->
 

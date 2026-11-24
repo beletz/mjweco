@@ -591,3 +591,42 @@ h1,h2,h3,.brand,.st,.dash-tile h3{ letter-spacing:-.01em; }
   .tm-row .tm-desc{grid-column:1/-1;order:5}
   .tm-head{display:none}
 }
+
+/* ── 경찰서: 위반 사유 버튼 ── */
+.fine-chips{display:flex;flex-wrap:wrap;gap:7px}
+.fine-chip{border:2px solid #E2E8F0;background:#fff;color:#334155;border-radius:999px;padding:8px 13px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}
+.fine-chip:hover{border-color:#FCA5A5;background:#FFF5F5}
+.fine-chip:active{transform:scale(.96)}
+.fine-chip.on{background:#EF4444;border-color:#EF4444;color:#fff}
+.fine-chip .fc-amt{font-size:12px;opacity:.75;margin-left:2px}
+.fine-chip.custom{border-style:dashed;color:#64748B}
+.fine-chip.custom.on{background:#475569;border-color:#475569;border-style:solid;color:#fff}
+
+/* ── 경찰서: 벌칙 법전 ── */
+.flaw-list{display:flex;flex-direction:column;gap:10px}
+.flaw-item{display:flex;align-items:center;gap:14px;background:#fff;border:1.5px solid #E2E8F0;border-left:6px solid #EF4444;border-radius:14px;padding:14px 18px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.flaw-no{font-family:Jua,sans-serif;font-size:15px;color:#EF4444;white-space:nowrap}
+.flaw-body{flex:1;min-width:0}
+.flaw-name{font-family:Jua,sans-serif;font-size:19px;color:#1E293B}
+.flaw-desc{font-size:14px;color:#64748B;margin-top:3px;line-height:1.5}
+.flaw-amt{font-family:Jua,sans-serif;font-size:18px;color:#DC2626;white-space:nowrap}
+@media (max-width:640px){.flaw-item{flex-wrap:wrap}.flaw-amt{width:100%;text-align:right}}
+
+/* ── 경찰서: 학생별 위반 기록 ── */
+.frec-card{border:1.5px solid #E2E8F0;border-radius:14px;margin-bottom:10px;background:#fff;overflow:hidden}
+.frec-card.frec-mid{border-left:6px solid #F59E0B}
+.frec-card.frec-hi{border-left:6px solid #EF4444}
+.frec-card.frec-lo{border-left:6px solid #94A3B8}
+.frec-head{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer}
+.frec-head:hover{background:#FAFAF9}
+.frec-name{flex:1;min-width:0;font-family:Jua,sans-serif;font-size:18px;color:#1E293B}
+.frec-last{font-family:inherit;font-size:12px;color:#94A3B8;margin-top:2px}
+.frec-stat{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.frec-count{background:#FEE2E2;color:#B91C1C;font-size:13px;font-weight:700;padding:3px 10px;border-radius:999px}
+.frec-total{font-family:Jua,sans-serif;font-size:16px;color:#DC2626}
+.frec-items{border-top:1px dashed #E2E8F0;padding:6px 16px 12px}
+.frec-item{display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #F1F5F9;font-size:14px}
+.frec-item:last-child{border-bottom:none}
+.frec-date{color:#94A3B8;white-space:nowrap;font-size:13px}
+.frec-reason{flex:1;color:#334155}
+.frec-amt{color:#DC2626;font-weight:700;white-space:nowrap}
