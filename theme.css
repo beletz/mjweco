@@ -787,3 +787,4 @@ h1,h2,h3,.brand,.st,.dash-tile h3{ letter-spacing:-.01em; }
 #wt-stk-hold .up,#wt-stk-hold .wt-up{color:#E11D48 !important}
 #wt-stk-hold .down,#wt-stk-hold .wt-down{color:#2563EB !important}
 .wt-empty > div.bob{display:block;width:max-content;margin:0 auto 6px}
+.wt-advice{font-size:14px;color:#2A3B66;background:#fff;border:1px solid #DFE7FF;border-radius:10px;padding:8px 10px;margin-top:7px;line-height:1.55}

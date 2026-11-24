@@ -413,16 +413,57 @@
     box.innerHTML = h;
   }
 
+  // 지나간 가격 기록(그래프에 보이는 것)만 보고 동향과 조언을 만듦. 정해 둔 변동 폭은 알려 주지 않음.
+  function adviseStock(s, held) {
+    var h = s.history || [s.price], n = h.length, now = h[n - 1];
+    if (n < 3) {
+      return { trend: ['➖ 지켜보는 중', 'blue'], swing: ['기록 부족', 'blue'],
+        trendText: '아직 가격이 ' + (n - 1) + '번밖에 바뀌지 않아서 흐름을 알기 어려워요.',
+        advice: '흐름을 알 수 없을 때는 한꺼번에 사지 말고 조금만 사서 지켜보는 게 안전해요.' + holdText(held) };
+    }
+    var back = h[Math.max(0, n - 6)], cnt = Math.min(5, n - 1);
+    var pct = Math.round((now - back) / back * 1000) / 10;
+    var moves = [];
+    for (var i = 1; i < n; i++) moves.push(Math.abs((h[i] - h[i - 1]) / h[i - 1] * 100));
+    var avgMove = moves.reduce(function (a, b) { return a + b; }, 0) / moves.length;
+    var ups = 0, downs = 0;
+    for (var j = n - 1; j > 0 && h[j] > h[j - 1]; j--) ups++;
+    for (var k = n - 1; k > 0 && h[k] < h[k - 1]; k--) downs++;
+    var hi = Math.max.apply(null, h), lo = Math.min.apply(null, h);
+
+    var trend = pct >= 3 ? ['📈 오르는 중', 'red'] : pct <= -3 ? ['📉 내리는 중', 'blue'] : ['➡️ 비슷함', 'green'];
+    var swing = avgMove >= 5 ? ['출렁임 큼', 'orange'] : avgMove >= 2 ? ['출렁임 보통', 'blue'] : ['출렁임 작음', 'green'];
+    var t = '최근 ' + cnt + '번 동안 ' + (pct > 0 ? pct + '% 올랐어요' : pct < 0 ? Math.abs(pct) + '% 내렸어요' : '가격이 그대로예요') + '.';
+    if (ups >= 3) t += ' ' + ups + '번 연속으로 올랐어요.';
+    else if (downs >= 3) t += ' ' + downs + '번 연속으로 내렸어요.';
+    if (now === hi && n >= 5) t += ' 지금이 기록 중 가장 비싼 값이에요.';
+    else if (now === lo && n >= 5) t += ' 지금이 기록 중 가장 싼 값이에요.';
+
+    var a;
+    if (pct >= 3) a = '꾸준히 오르고 있지만, 많이 오른 뒤에는 다시 내려가기도 해요. 지금 산다면 한꺼번에 말고 조금씩 나눠서 사 봐요.';
+    else if (pct <= -3) a = '계속 내리고 있어요. 싸졌다고 한 번에 많이 사면 더 내릴 수도 있어요. 뉴스를 살펴보고 내림이 멈추는지 확인한 뒤 조금씩 사 봐요.';
+    else a = '가격이 비교적 안정적이에요. 처음 투자해 보는 친구가 연습하기에 알맞아요.';
+    if (avgMove >= 5) a += ' 오르내림이 커서 이익도 손해도 크게 날 수 있으니, 잃어도 괜찮은 만큼만 투자해요.';
+    return { trend: trend, swing: swing, trendText: t, advice: a + holdText(held) };
+  }
+  function holdText(held) {
+    if (!held) return '';
+    if (held.pct >= 10) return ' 나는 지금 ' + held.pct + '% 이익이에요. 일부를 팔아 이익을 챙겨 두는 것도 좋은 방법이에요.';
+    if (held.pct <= -10) return ' 나는 지금 ' + Math.abs(held.pct) + '% 손해예요. 겁먹고 급하게 팔기보다 흐름과 뉴스를 보고 차분히 정해요.';
+    return ' 나는 ' + held.qty + '주를 가지고 있어요.';
+  }
+
   function renderInfo() {
     var box = $('wt-stk-info');
-    var h = '<div class="wt-info-title">🏢 종목 안내</div>';
+    var mine = {};
+    ((market.holdings && market.holdings.list) || []).forEach(function (x) { mine[x.stockId] = x; });
+    var h = '<div class="wt-info-title">🧭 최근 동향과 투자 조언</div>';
     market.stocks.forEach(function (s) {
-      var range = Math.max(Math.abs(s.minPct), Math.abs(s.maxPct));
-      var risk = range >= 8 ? ['높음', 'red'] : range >= 4 ? ['보통', 'orange'] : ['낮음', 'green'];
-      var hist = s.history || [s.price];
-      var hi = Math.max.apply(null, hist), lo = Math.min.apply(null, hist);
-      h += '<div class="wt-info-stock"><div class="wt-info-head">' + s.emoji + ' <b>' + E(s.name) + '</b> <span class="wt-tag ' + risk[1] + '">위험도 ' + risk[0] + '</span></div>' +
-        '<div class="wt-info-meta">업종 ' + E(s.sector || '-') + ' · 한 번에 ' + s.minPct + '% ~ +' + s.maxPct + '% 움직임 · 최근 최고 ' + hi.toLocaleString() + ' / 최저 ' + lo.toLocaleString() + '</div></div>';
+      var a = adviseStock(s, mine[s.id]);
+      h += '<div class="wt-info-stock"><div class="wt-info-head">' + s.emoji + ' <b>' + E(s.name) + '</b> ' +
+        '<span class="wt-tag ' + a.trend[1] + '">' + a.trend[0] + '</span> <span class="wt-tag ' + a.swing[1] + '">' + a.swing[0] + '</span></div>' +
+        '<div class="wt-info-meta">' + E(a.trendText) + '</div>' +
+        '<div class="wt-advice">💡 ' + E(a.advice) + '</div></div>';
     });
     h += '<div class="wt-info-title" style="margin-top:14px;">📰 AI 뉴스</div>';
     if (!market.news.length) h += '<div class="empty-msg" style="padding:16px 0;">아직 큰 뉴스가 없어요.</div>';
