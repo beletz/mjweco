@@ -599,8 +599,10 @@ function createDepositByBanker(classCode, studentNo, weeks, amount, finalRate, s
 }
 
 // ── 예금 기록 수정 (은행청장: 이자율 + 만기일 변경) ──
-function editDepositByBanker(classCode, rowNo, newRate, newExpireDate) {
+// byTeacher=true(교사)만 수정 가능 (만기일을 앞당겨 중도 해지 신용점수 하락을 피하지 못하게)
+function editDepositByBanker(classCode, rowNo, newRate, newExpireDate, byTeacher) {
   try {
+    if (byTeacher !== true) return { success: false, msg: "예금 수정은 선생님만 할 수 있어요." };
     var ss       = SpreadsheetApp.getActiveSpreadsheet();
     var depSheet = getOrCreateDepositsSheet(ss);
     var depData  = depSheet.getDataRange().getValues();
@@ -621,7 +623,8 @@ function editDepositByBanker(classCode, rowNo, newRate, newExpireDate) {
 }
 
 // ── 예금 기록 삭제 (은행청장) ──
-function deleteDepositByBanker(classCode, rowNo) {
+// byTeacher=true(교사)만 진행 중인 예금을 삭제할 수 있음 (중도 해지 신용점수 하락을 삭제로 피하지 못하게)
+function deleteDepositByBanker(classCode, rowNo, byTeacher) {
   try {
     var ss       = SpreadsheetApp.getActiveSpreadsheet();
     var depSheet = getOrCreateDepositsSheet(ss);
@@ -633,6 +636,9 @@ function deleteDepositByBanker(classCode, rowNo) {
       return { success: false, msg: "해당 예금 기록을 찾을 수 없습니다." };
     if(cleanText(depData[rn][0]) !== cc)
       return { success: false, msg: "접근 권한이 없습니다." };
+
+    if (cleanText(depData[rn][7]) === '활성' && byTeacher !== true)
+      return { success: false, msg: "진행 중인 예금은 선생님만 삭제할 수 있어요. 해지하려면 중도 해지를 눌러 주세요. 잘못 만든 예금이면 선생님께 말씀드려 주세요." };
 
     // ★ 아직 살아 있는(활성) 예금이면, 은행에 묶인 원금을 카드로 돌려준 뒤 지움
     //   (예전에는 기록만 지워서 은행 잔액이 그대로 남는 오류가 있었음)
@@ -800,25 +806,35 @@ function cancelDepositByBanker(classCode, studentNo, depositRowNo) {
     var principal = Number(rowData[3]) || 0;
     var wkLabel   = rowData[2];
  
-    var stuRowIdx = -1, cardBalance = 0, bankBalance = 0;
+    // ★ 예금 기간별 신용점수 하락 (0점 아래로는 내려가지 않음)
+    var creditSettings = getDepositCreditSettings(classCode);
+    if (!creditSettings.success) return creditSettings;
+    var penalty = creditSettings.penalties[(parseInt(wkLabel) || 0) - 1] || 0;
+
+    var stuRowIdx = -1, cardBalance = 0, bankBalance = 0, currentCredit = 0;
     for (var i = 1; i < stuData.length; i++) {
       if (cleanText(stuData[i][0]) === cc && cleanText(String(stuData[i][1])) === sno) {
-        stuRowIdx = i + 1; cardBalance = Number(stuData[i][4]) || 0; bankBalance = Number(stuData[i][5]) || 0; break;
+        stuRowIdx = i + 1; cardBalance = Number(stuData[i][4]) || 0; bankBalance = Number(stuData[i][5]) || 0;
+        currentCredit = Number(stuData[i][6]) || 0; break;
       }
     }
     if (stuRowIdx === -1) return { success: false, msg: "학생 정보를 찾을 수 없습니다." };
  
     var newBank = bankBalance - principal;
     var newCard = cardBalance + principal;
+    var newCredit = penalty > 0 ? Math.max(0, currentCredit - penalty) : currentCredit;
+    var creditLoss = currentCredit - newCredit;
  
     stuSheet.getRange(stuRowIdx, 5).setValue(newCard);
     stuSheet.getRange(stuRowIdx, 6).setValue(newBank);
+    if (creditLoss > 0) stuSheet.getRange(stuRowIdx, 7).setValue(newCredit);
     depSheet.getRange(depRowIdx, 8).setValue('중도해지');
-    tSheet.appendRow([getTodayStr(), cc, sno, wkLabel + ' 중도해지 (원금만 반환)', principal, '', newCard, '예금중도해지']);
+    tSheet.appendRow([getTodayStr(), cc, sno, wkLabel + ' 중도해지 (원금만 반환)' + (creditLoss > 0 ? ' — 신용점수 -' + creditLoss + '점' : ''), principal, '', newCard, '예금중도해지']);
  
     try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
     SpreadsheetApp.flush();
-    return { success: true, msg: "중도 해지 완료! 원금 " + principal + " 머니 반환" };
+    return { success: true, newCredit: newCredit, creditLoss: creditLoss,
+      msg: "중도 해지 완료! 원금 " + principal + " 머니 반환" + (creditLoss > 0 ? "\n신용점수 -" + creditLoss + "점 (" + currentCredit + " → " + newCredit + "점)" : "") };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
@@ -1971,11 +1987,19 @@ function getOrCreateDepositCreditSheet(ss) {
   var sheet = ss.getSheetByName('DepositCredit');
   if (!sheet) {
     sheet = ss.insertSheet('DepositCredit');
-    sheet.appendRow(['학급코드','1주점수','2주점수','3주점수','4주점수']);
+    sheet.appendRow(['학급코드','1주점수','2주점수','3주점수','4주점수','1주하락','2주하락','3주하락','4주하락']);
   }
   return sheet;
 }
 
+// 중도 해지 때 깎이는 신용점수 [1주,2주,3주,4주]. 아직 저장한 적 없는 칸은 기본값 (0으로 저장하면 하락 없음)
+var DEPOSIT_PENALTY_DEFAULTS = [1, 2, 3, 5];
+function _depositPenalties(row) {
+  return DEPOSIT_PENALTY_DEFAULTS.map(function(def, k) {
+    var v = row ? row[5 + k] : '';
+    return (v === '' || v === undefined || v === null) ? def : Math.max(0, Number(v) || 0);
+  });
+}
 function getDepositCreditSettings(classCode) {
   try {
     var cached = _getCache('depcredit', classCode);
@@ -1991,18 +2015,35 @@ function getDepositCreditSettings(classCode) {
           c1: Number(data[i][1]) || 0,
           c2: Number(data[i][2]) || 0,
           c3: Number(data[i][3]) || 0,
-          c4: Number(data[i][4]) || 0
+          c4: Number(data[i][4]) || 0,
+          penalties: _depositPenalties(data[i])
         };
         _setCache('depcredit', classCode, result, 300);
         return result;
       }
     }
-    var def = { success: true, c1: 1, c2: 2, c3: 3, c4: 5 };
+    var def = { success: true, c1: 1, c2: 2, c3: 3, c4: 5, penalties: _depositPenalties(null) };
     _setCache('depcredit', classCode, def, 300);
     return def;
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
+function setDepositPenaltySettings(classCode, d1, d2, d3, d4) {
+  try {
+    var vals = [d1, d2, d3, d4].map(function(v) { return String(v == null ? '' : v).trim() === '' ? NaN : Number(v); });
+    if (vals.some(function(v) { return !(v >= 0 && v <= 100) || v % 1 !== 0; }))
+      return { success: false, msg: '하락 점수는 0에서 100 사이의 숫자로 적어 주세요.' };
+    var sheet = getOrCreateDepositCreditSheet(SpreadsheetApp.getActiveSpreadsheet());
+    var data = sheet.getDataRange().getValues();
+    var cc = cleanText(classCode), row = -1;
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { row = i + 1; break; }
+    if (row === -1) sheet.appendRow([cc, 1, 2, 3, 5].concat(vals));
+    else sheet.getRange(row, 6, 1, 4).setValues([vals]);
+    try { CacheService.getScriptCache().remove('depcredit_'+cc); } catch(e){}
+    SpreadsheetApp.flush();
+    return { success: true, msg: '예금 해지 신용등급 하락 설정이 저장되었습니다.' };
+  } catch(e) { return { success: false, msg: e.message }; }
+}
 function setDepositCreditSettings(classCode, c1, c2, c3, c4) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();

@@ -560,6 +560,19 @@
     4주 <strong id="credit-preview-4">5</strong>점
   </div>
 </div>
+    <!-- 예금 중도 해지 신용등급 하락 설정 -->
+    <div class="sc" style="margin-top:18px;">
+      <div class="st"><i class="fa-solid fa-arrow-trend-down" style="color:var(--red);"></i> 예금 해지 신용등급 하락 설정
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="saveDepositPenaltySettings()"><i class="fa-solid fa-floppy-disk"></i> 저장</button>
+      </div>
+      <div class="info-box">💡 만기 전에 중도 해지하면 예금 기간에 따라 신용점수가 바로 깎이고, 점수에 맞춰 신용등급도 내려갑니다. 0을 적으면 깎이지 않아요. 만기 지급에는 적용되지 않습니다.</div>
+      <div class="rate-grid" style="margin-bottom:0;">
+      <div class="rate-card"><div class="rate-week">1주 예금</div><input class="rate-input" id="penalty1" type="number" value="1" min="0" max="100" aria-label="1주 예금 중도 해지 하락 점수"><div class="rate-pct">점 하락</div></div>
+      <div class="rate-card"><div class="rate-week">2주 예금</div><input class="rate-input" id="penalty2" type="number" value="2" min="0" max="100" aria-label="2주 예금 중도 해지 하락 점수"><div class="rate-pct">점 하락</div></div>
+      <div class="rate-card"><div class="rate-week">3주 예금</div><input class="rate-input" id="penalty3" type="number" value="3" min="0" max="100" aria-label="3주 예금 중도 해지 하락 점수"><div class="rate-pct">점 하락</div></div>
+      <div class="rate-card"><div class="rate-week">4주 예금</div><input class="rate-input" id="penalty4" type="number" value="5" min="0" max="100" aria-label="4주 예금 중도 해지 하락 점수"><div class="rate-pct">점 하락</div></div>
+      </div>
+    </div>
     <div class="sc">
       <div class="st"><i class="fa-solid fa-list" style="color:var(--green);"></i> 전체 예금 현황
         <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadAllDeposits()"><i class="fa-solid fa-rotate-right"></i> 새로고침</button>

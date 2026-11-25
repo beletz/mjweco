@@ -12,6 +12,7 @@ var _allTreasuryList = [];
 var _treasuryMode = 'inc';
 var _allTeacherTreasuryList = [];
 var _depositCreditMap = { 1: 1, 2: 2, 3: 3, 4: 5 };
+var _depositPenalties = null; // 중도 해지 하락 점수 [1주,2주,3주,4주]
 var _creditPendingMap = {};
 var _creditGradeSettings = [
   {grade:1,minScore:90,emoji:'👑'},{grade:2,minScore:80,emoji:'💎'},
@@ -475,11 +476,27 @@ function loadDepositCreditSettings(){
       updateCreditPreviews();
       // 은행청장 패널에도 반영
       _depositCreditMap = { 1: r.c1, 2: r.c2, 3: r.c3, 4: r.c4 };
+      _depositPenalties = r.penalties;
+      r.penalties.forEach(function(p, k){ if($('penalty'+(k+1))) $('penalty'+(k+1)).value = p; });
     })
     .getDepositCreditSettings(targetCC);
 }
 
 // 예금 신용점수 설정 저장
+function saveDepositPenaltySettings(){
+  var v=[1,2,3,4].map(function(w){ return $('penalty'+w).value.trim(); });
+  if(v.some(function(x){ return !/^\d+$/.test(x) || Number(x)>100; })) return alert('하락 점수는 0에서 100 사이의 숫자로 적어 주세요.');
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r){
+      hideLoading();
+      showToast(r.success ? '✅ '+r.msg : '⚠️ '+r.msg);
+      if(r.success) _depositPenalties = v.map(Number);
+    })
+    .withFailureHandler(function(err){ hideLoading(); alert('오류: ' + err.message); })
+    .setDepositPenaltySettings(_adminCC, v[0], v[1], v[2], v[3]);
+}
+
 function saveDepositCreditSettings(){
   var c1=$('credit1').value, c2=$('credit2').value;
   var c3=$('credit3').value, c4=$('credit4').value;
@@ -647,10 +664,10 @@ function renderDepositList(list){
       h += '<button onclick="cancelDeposit('+d.rowNo+',\''+esc(d.studentNo)+'\','+d.principal+')" style="border:1.5px solid #EF4444;color:#EF4444;background:white;padding:7px 15px;font-size:13px;font-weight:700;border-radius:10px;cursor:pointer;font-family:Pretendard,sans-serif;">중도 해지 🚫</button>';
     }
 
-    if(isActive){
+    if(isActive && _isTeacher){
       h += '<button onclick="editDeposit('+d.rowNo+',\''+esc(d.studentNo)+'\',\''+esc(d.name)+'\','+d.principal+','+d.rate+',\''+startStr+'\',\''+expireStr+'\')" title="수정" style="background:#F8FAFC;color:#64748B;border:1.5px solid #E2E8F0;padding:8px 12px;font-size:15px;border-radius:10px;cursor:pointer;">✏️</button>';
     }
-    h += '<button onclick="deleteDeposit('+d.rowNo+',\''+esc(d.studentNo)+'\')" title="삭제" style="background:#FFF5F5;color:#EF4444;border:1.5px solid #FECACA;padding:8px 12px;font-size:15px;border-radius:10px;cursor:pointer;">🗑️</button>';
+    if(!isActive || _isTeacher) h += '<button onclick="deleteDeposit('+d.rowNo+',\''+esc(d.studentNo)+'\')" title="삭제" style="background:#FFF5F5;color:#EF4444;border:1.5px solid #FECACA;padding:8px 12px;font-size:15px;border-radius:10px;cursor:pointer;">🗑️</button>';
 
     h += '  </div>';
     h += '</div>';
@@ -1387,6 +1404,7 @@ function loadAndShowCreditInBanker(targetCC){
     .withSuccessHandler(function(r){
       if(!r.success) return;
       _depositCreditMap = { 1: r.c1||0, 2: r.c2||0, 3: r.c3||0, 4: r.c4||0 };
+      _depositPenalties = r.penalties;
       var info = $('banker-rates-info');
       if(info && info.innerHTML.indexOf('만기 해지') === -1){
         info.innerHTML +=
@@ -1394,7 +1412,9 @@ function loadAndShowCreditInBanker(targetCC){
           '1주 <span style="color:var(--yellow)">+'+r.c1+'점</span> | ' +
           '2주 <span style="color:var(--yellow)">+'+r.c2+'점</span> | ' +
           '3주 <span style="color:var(--yellow)">+'+r.c3+'점</span> | ' +
-          '4주 <span style="color:var(--yellow)">+'+r.c4+'점</span>';
+          '4주 <span style="color:var(--yellow)">+'+r.c4+'점</span>' +
+          '<br>⚠️ <b>중도 해지 시 신용점수 하락:</b> ' +
+          r.penalties.map(function(p, k){ return (k+1)+'주 <span style="color:var(--red)">'+(p ? '-'+p : 0)+'점</span>'; }).join(' | ');
       }
     })
     .getDepositCreditSettings(targetCC);
@@ -1525,7 +1545,10 @@ async function processMaturity(depositRowNo, studentNo, principal, rate){
 }
 
 async function cancelDeposit(depositRowNo, studentNo, principal){
-  if(!await uiConfirm('중도 해지 시 이자는 지급되지 않습니다. 원금(' + Number(principal).toLocaleString() + ' 머니)만 반환하시겠습니까?')) return;
+  var dep = _allDepositList.find(function(d){ return d.rowNo === depositRowNo; });
+  var loss = (dep && _depositPenalties) ? _depositPenalties[(parseInt(dep.type)||0) - 1] : undefined;
+  var lossMsg = loss === undefined ? '정해 둔 만큼 신용점수가 깎일 수 있어요.' : loss > 0 ? dep.type + ' 예금이라 신용점수가 ' + loss + '점 깎여요.' : '';
+  if(!await uiConfirm('[예금 중도 해지]\n\n이자 없이 원금(' + Number(principal).toLocaleString() + ' 머니)만 돌려줘요.' + (lossMsg ? '\n' + lossMsg : '') + '\n\n중도 해지할까요?')) return;
   var targetCC = _cc || _adminCC;
   showLoading();
   google.script.run
@@ -1551,7 +1574,7 @@ async function deleteDeposit(rowNo, studentNo){
       if(typeof loadList==='function' && _adminCC) loadList();
     })
     .withFailureHandler(function(err){ hideLoading(); alert('오류: ' + err.message); })
-    .deleteDepositByBanker(targetCC, rowNo);
+    .deleteDepositByBanker(targetCC, rowNo, _isTeacher===true);
 }
 
 // ── 선생님: 은행 잔액 점검·정리 ──
@@ -1664,7 +1687,7 @@ function submitDepositEdit(){
       if(r.success) loadAllDeposits();
     })
     .withFailureHandler(function(err){ hideLoading(); alert('오류: ' + err.message); })
-    .editDepositByBanker(targetCC, rowNo, rate, expire);
+    .editDepositByBanker(targetCC, rowNo, rate, expire, _isTeacher===true);
 }
 
 // ============================================================
