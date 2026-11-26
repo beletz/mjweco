@@ -1089,6 +1089,10 @@ body:has(#view-master-dashboard.active) ::-webkit-scrollbar-thumb{ border-color:
 @media (max-width:640px){ .nb-title{font-size:20px;padding-right:0} .nb-open{position:static;margin-top:12px} }
 @media (prefers-reduced-motion:reduce){ .nb-live{animation:none} }
 
+/* 뉴스룸: 적용 날짜 달력 */
+.nw-date{display:inline-flex;align-items:center;gap:8px;font-size:15px;color:var(--ink-2)}
+.nw-date input{padding:9px 12px;border:2px solid var(--line-strong);border-radius:11px;font-size:16px;font-family:inherit;background:#fff;color:var(--dark);cursor:pointer}
+.nw-date input:focus{outline:none;border-color:var(--blue);box-shadow:var(--focus)}
 /* 뉴스룸: 다음 주 전망 문장 · 공표한 전망 · 학생 예보 띠 */
 .nw-forecast{font-size:17px;line-height:1.6;color:#0E5E46;background:var(--t-green);border-radius:12px;padding:10px 14px;margin:-6px 0 16px;word-break:keep-all}
 .nw-on.nw-ann{border-color:#14A46C !important;background:#F6FFFA}

@@ -4735,7 +4735,7 @@ function bulkUpdateStudents(classCode, itemsJson) {
 // 📰 학급 경제 뉴스룸 (마스터 → 뉴스룸)
 // 학급의 돈·예금·매점·투자 상태를 보고 사이트 안의 계산 규칙("AI 뉴스 엔진")이 매주 뉴스를 만듦 (외부 AI 사용 안 함)
 // Newsroom: [0]학급코드 [1]상태JSON { issue, draft(이번 주에 만든 다음 주 전망), announced(공표한 전망), active(지금 적용 중), snaps(주별 기록), history }
-// 공표하면 다음 주 월요일 0시에 active가 됨. 원래 값은 그대로 두고 active.effects(%)를 덮어씌워 계산함 → 해제하면 원래 값으로 돌아감
+// 공표하면 고른 적용 날짜(기본: 다음 주 월요일) 0시에 active가 됨. 원래 값은 그대로 두고 active.effects(%)를 덮어씌워 계산함 → 해제하면 원래 값으로 돌아감
 // ==========================================
 function _newsLoad(classCode) {
   var cc = cleanText(classCode), sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Newsroom'), state = null;
@@ -4744,7 +4744,7 @@ function _newsLoad(classCode) {
     for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { try { state = JSON.parse(String(data[i][1] || '')); } catch (e) { state = null; } break; }
   }
   state = state || { issue: 0, draft: null, active: null, snaps: [], history: [] };
-  // 공표한 전망은 적용일(다음 주 월요일 0시)이 되면 저절로 실현됨 (저장은 다음에 상태를 저장할 때 함께)
+  // 공표한 전망은 적용일 0시(기본: 다음 주 월요일)가 되면 저절로 실현됨 (저장은 다음에 상태를 저장할 때 함께)
   if (state.announced && Date.now() >= state.announced.effectiveAt) { state.active = state.announced; state.announced = null; }
   return state;
 }
@@ -4932,8 +4932,17 @@ function _newsSum(kind, parts, lo, hi) {                // 영향들을 더하�
   return { v: v, why: v === 0 ? '큰 변화가 없어서 지금처럼 둘 예정이에요.' : (best || '시장 분위기에 따라 조금 움직일 예정이에요.') };
 }
 // "12월 1일(월)부터 예금 이자율은 20% 오르고, 매점 물가는 12% 오를 예정이에요."
+function _newsDayLabel(ms) {                            // "11월 30일(월)" (한국 시간)
+  var k = new Date(ms + KST_MS);
+  return (k.getUTCMonth() + 1) + '월 ' + k.getUTCDate() + '일(' + '일월화수목금토'.charAt(k.getUTCDay()) + ')';
+}
+// 뉴스의 변동 %로 전망 문장 만들기 (적용 날짜를 바꾸면 다시 만듦)
+function _newsForecastOf(n, ms) {
+  var e = n.effects || {};
+  return _newsForecast(new Date(ms + KST_MS), [['예금 이자율은', e.rate], ['매점 물가는', e.price]].concat(n.estates ? [['자리 매매가는', e.estate], ['자리 임대료는', e.rent]] : []));
+}
 function _newsForecast(next, list) {
-  var when = (next.getUTCMonth() + 1) + '월 ' + next.getUTCDate() + '일(월)부터 ';
+  var when = _newsDayLabel(next.getTime() - KST_MS) + '부터 ';
   var moves = list.filter(function (x) { return x[1]; });
   if (!moves.length) return '그래서 ' + when + '예금 이자율과 물가는 지금처럼 그대로일 예정이에요.';
   return '그래서 ' + when + moves.map(function (x, i) {
@@ -5006,6 +5015,13 @@ function _newsView(classCode, state, msg) {
   // 이자율 그림은 지금의 원래 이자율로 (선생님이 그사이 바꿨을 수 있음)
   var b = getBankSettings(classCode);
   [state.draft, state.announced, state.active].forEach(function (n) { if (n && b.success) n.baseRates = b.base; });
+  // 적용 날짜가 생기기 전(2026-11-26 이전)에 만든 뉴스는 날짜와 전망 문장을 채워 줌
+  [state.draft, state.announced, state.active].concat(state.history || []).forEach(function (n) {
+    if (!n) return;
+    if (!n.effectiveAt) n.effectiveAt = n.appliedAt || _newsNextMonday();
+    if (!n.forecast) n.forecast = _newsForecastOf(n, n.effectiveAt);
+    if (!n.announcedAt) n.announcedAt = n.appliedAt || n.createdAt;
+  });
   return { success: true, msg: msg || '', className: name, draft: state.draft, announced: state.announced || null, active: state.active, history: state.history || [] };
 }
 
@@ -5032,17 +5048,23 @@ function generateNews(classCode) {
   } catch (e) { return { success: false, msg: e.message }; }
 }
 // 다음 주 전망 공표 — 다음 주 월요일 0시에 저절로 적용됨 (_newsLoad)
-function announceNews(classCode, newsId) {
+// ymd: 적용할 날짜 'yyyy-MM-dd' (그날 0시, 한국 시간). 비우면 다음 주 월요일
+function announceNews(classCode, newsId, ymd) {
   try {
     var state = _newsLoad(classCode);
     if (!state.draft || state.draft.id !== newsId) return { success: false, msg: '그사이 뉴스가 새로 만들어졌어요. 화면을 다시 열어 확인해 주세요.' };
+    var at = _newsNextMonday(), m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+    if (m) at = Date.UTC(+m[1], +m[2] - 1, +m[3]) - KST_MS;
+    else if (ymd) return { success: false, msg: '적용 날짜를 달력에서 골라 주세요.' };
+    if (at <= Date.now()) return { success: false, msg: '적용 날짜는 내일부터 고를 수 있어요. (미리 알려 주는 전망이라서요)' };
+    if (at > Date.now() + 90 * 86400000) return { success: false, msg: '적용 날짜는 90일 안으로 골라 주세요.' };
     state.draft.announcedAt = Date.now();
-    state.draft.effectiveAt = _newsNextMonday();
+    state.draft.effectiveAt = at;
+    state.draft.forecast = _newsForecastOf(state.draft, at);
     state.announced = state.draft;
     state.history = [state.draft].concat((state.history || []).filter(function (h) { return h.id !== newsId; })).slice(0, 10);
     _newsSave(classCode, state);
-    var d = new Date(state.draft.effectiveAt + KST_MS);
-    return _newsView(classCode, state, '다음 주 경제 전망을 공표했어요! ' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일(월)부터 저절로 적용돼요.');
+    return _newsView(classCode, state, '경제 전망을 공표했어요! ' + _newsDayLabel(at) + ' 0시부터 저절로 적용돼요.');
   } catch (e) { return { success: false, msg: e.message }; }
 }
 function cancelAnnouncement(classCode) {
