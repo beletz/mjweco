@@ -1104,3 +1104,68 @@ body:has(#view-master-dashboard.active) ::-webkit-scrollbar-thumb{ border-color:
 .np-share{display:flex;align-items:center;gap:4mm}
 .np-share h2{margin:0;white-space:nowrap}
 .np-share .np-stack{flex:1}
+
+/* ===== 부동산: 우리 반 자리 배치도 (seatmap.js) ===== */
+.sm-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+.sm-hint{font-size:15px;color:var(--ink-2);margin-right:auto}
+.sm-hint-edit{color:#B45309;font-weight:600}
+.sm-add{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px;color:var(--ink-2);width:100%}
+.sm-chip{border:2px dashed #F59E0B;background:#FFFBEB;color:#92400E;border-radius:999px;padding:5px 12px;font-size:14px;font-family:inherit;cursor:pointer}
+.sm-chip:hover{background:#FEF3C7}
+.sm-scroll{overflow-x:auto;border-radius:18px}
+.sm-room{position:relative;min-width:760px;max-width:920px;margin:0 auto;aspect-ratio:1/1;border-radius:18px;border:6px solid #C08552;
+  background:#FFF4E0 repeating-linear-gradient(90deg,transparent 0 58px,rgba(192,133,82,.12) 58px 60px);overflow:hidden;user-select:none}
+.sm-room.editing{border-color:#F59E0B;box-shadow:0 0 0 4px #FDE68A}
+.sm-room.editing [data-type]{cursor:grab;touch-action:none}
+.sm-room [data-type].dragging{cursor:grabbing;z-index:30;filter:drop-shadow(0 8px 10px rgba(0,0,0,.22))}
+.sm-item,.sm-seat{position:absolute;transform:translate(-50%,-50%)}
+.sm-item{display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;border-radius:8px;z-index:1}
+.sm-k-board{width:46%;height:42px;background:#2F6B45;border:5px solid #A0703F;color:#E9F7EE;font-size:18px;letter-spacing:6px}
+.sm-k-tdesk{width:110px;height:38px;background:#B7793F;border-bottom:6px solid #8A5528}
+.sm-k-door{width:34px;height:74px;background:#D9A066;border:3px solid #9C6531;color:#5B3510;font-size:13px;writing-mode:vertical-rl}
+.sm-k-door span{writing-mode:horizontal-tb}
+.sm-k-window{width:16px;height:22%;background:#BFE3FF;border:3px solid #7DB9E8;color:#1E5A8A;font-size:12px;writing-mode:vertical-rl}
+.sm-k-locker{width:140px;height:34px;background:repeating-linear-gradient(90deg,#7AA7E8 0 26px,#4F82CC 26px 28px);color:#fff}
+.sm-k-plant{width:42px;height:42px;background:#DCFCE7;border-radius:50%;font-size:24px}
+.sm-k-tv{width:84px;height:46px;background:#334155;border:4px solid #1E293B;font-size:14px}
+.sm-x{position:absolute;top:-10px;right:-10px;width:22px;height:22px;border-radius:50%;background:#EF4444;color:#fff;font-size:12px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;font-style:normal;writing-mode:horizontal-tb}
+.sm-seat{display:flex;flex-direction:column;align-items:center;width:104px;z-index:2;cursor:pointer}
+.sm-desk{position:relative;width:104px;min-height:56px;border-radius:9px;padding:6px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:#FFE7A8;border:3px solid #D6A13C;border-bottom-width:6px;transition:transform .15s}
+.sm-seat:hover .sm-desk{transform:translateY(-2px)}
+.sm-desk b{font-size:15px;color:#7C4A03}
+.sm-desk span{font-size:14px;color:#5B3A06;line-height:1.2;text-align:center;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sm-star{position:absolute;top:-11px;left:-9px;font-style:normal;font-size:18px}
+.sm-chair{width:44px;height:10px;margin-top:2px;border-radius:0 0 12px 12px;background:#E0915A;border:2px solid #B4652E;border-top:none}
+.sm-tag{margin-top:4px;padding:3px 10px;border-radius:999px;font-size:13.5px;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis}
+.sm-seat.sale .sm-tag{background:#DCFCE7;color:#166534;border:1.5px solid #4ADE80}
+.sm-seat.owned .sm-desk{background:#DBEAFE;border-color:#60A5FA}
+.sm-seat.owned .sm-desk b{color:#1E40AF}
+.sm-seat.owned .sm-desk span{color:#1E3A8A}
+.sm-seat.owned .sm-tag{background:#2563EB;color:#fff}
+.sm-empty{margin-top:10px;padding:12px 14px;border-radius:12px;background:#FFFBEB;color:#92400E;font-size:15px}
+.sm-legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;font-size:14px;color:var(--ink-2)}
+.sm-legend .lg{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:4px}
+.sm-legend .lg.sale{background:#FFE7A8;border:2px solid #D6A13C}
+.sm-legend .lg.owned{background:#DBEAFE;border:2px solid #60A5FA}
+.sm-pop{position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px}
+.sm-pop.show{display:flex}
+.sm-pop-card{position:relative;width:100%;max-width:420px;background:#fff;border-radius:20px;padding:22px 20px 18px;border-top:8px solid #F59E0B;box-shadow:var(--sh-3)}
+.sm-pop-x{position:absolute;top:12px;right:12px;border:none;background:#F1F5F9;width:32px;height:32px;border-radius:50%;font-size:15px;cursor:pointer}
+.sm-pop-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px;padding-right:34px}
+.sm-pop-head h3{margin:0;font-size:22px;color:var(--dark)}
+.sm-pop-no{background:#FEF3C7;color:#92400E;border-radius:8px;padding:2px 8px;font-size:14px}
+.sm-pop-st{border-radius:999px;padding:3px 10px;font-size:13px}
+.sm-pop-st.sale{background:#DCFCE7;color:#166534}
+.sm-pop-st.owned{background:#DBEAFE;color:#1E40AF}
+.sm-pop-rows{display:grid;gap:6px;margin-bottom:14px}
+.sm-pop-rows div{display:flex;justify-content:space-between;font-size:16px;padding:7px 10px;background:#F8FAFC;border-radius:10px}
+.sm-pop-rows span{color:var(--ink-2)}
+.sm-pop-perk{background:#FFFBEB;border:2px solid #FDE68A;border-radius:14px;padding:12px}
+.sm-pop-lb{font-size:15px;color:#92400E;margin-bottom:6px}
+.sm-pop-perk p{margin:0;font-size:17px;color:var(--dark);line-height:1.5}
+.sm-pop-perk textarea{width:100%;min-height:80px;box-sizing:border-box;border:2px solid var(--line-strong);border-radius:10px;padding:9px;font-size:16px;font-family:inherit;resize:vertical}
+.sm-pop-perk textarea:focus{outline:none;border-color:#F59E0B;box-shadow:var(--focus)}
+.sm-pop-btns{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.sm-pop-cnt{font-size:13px;color:var(--gray)}

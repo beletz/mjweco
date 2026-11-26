@@ -2175,6 +2175,7 @@ function realtorTab(id,el){
   document.querySelectorAll('#realtor-panel-wrap .panel-content').forEach(function(c){c.classList.remove('act')});
   el.classList.add('act');$(id).classList.add('act');
   if(id==='re-market')loadRealEstate();
+  if(id==='re-register'&&typeof loadSeatMap==='function')loadSeatMap(); // 자리 배치도 (seatmap.js)
 }
 
 function loadRealEstate(){
@@ -2195,12 +2196,12 @@ function loadRealEstate(){
 }
 
 function doAddRealEstate(){
-  var no=$('re-no').value,name=$('re-name').value,type=$('re-type').value,price=$('re-price').value,rent=$('re-rent').value;
+  var no=$('re-no').value,name=$('re-name').value,type=$('re-type').value,price=$('re-price').value,rent=$('re-rent').value,perk=$('re-perk').value;
   if(!no||!name||!price)return alert('자산번호, 이름, 가격을 입력해 주세요.');
   google.script.run.withSuccessHandler(function(r){
     showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);
-    if(r.success){$('re-no').value='';$('re-name').value='';$('re-price').value='';loadRealEstate();}
-  }).addRealEstate(_cc,no,name,type,price,rent);
+    if(r.success){$('re-no').value='';$('re-name').value='';$('re-price').value='';$('re-perk').value='';loadRealEstate();if(typeof loadSeatMap==='function')loadSeatMap();}
+  }).addRealEstate(_cc||_adminCC,no,name,type,price,rent,perk);
 }
 
 async function doBuyRE(assetNo){

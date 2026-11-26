@@ -1383,11 +1383,17 @@ function getRealEstateList(classCode) {
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
-function addRealEstate(classCode, assetNo, name, type, price, rent) {
+// perk: 자리 혜택 (선택, 자리 배치도에 보임)
+function addRealEstate(classCode, assetNo, name, type, price, rent, perk) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var reSheet = getOrCreateRealEstateSheet(ss);
-    reSheet.appendRow([cleanText(classCode), assetNo, name, type||'기타', '', Number(price)||0, Number(rent)||0, '매물']);
+    var reSheet = getOrCreateRealEstateSheet(ss), cc = cleanText(classCode), no = String(assetNo || '').trim();
+    if (!no) return { success: false, msg: '자산 번호를 적어 주세요.' };
+    var dup = reSheet.getDataRange().getValues().some(function (r, i) { return i && cleanText(r[0]) === cc && String(r[1]).trim() === no; });
+    if (dup) return { success: false, msg: '자산 번호 ' + no + '은(는) 이미 있어요. 다른 번호를 적어 주세요.' };
+    reSheet.appendRow([cc, no, name, type||'기타', '', Number(price)||0, Number(rent)||0, '매물']);
+    perk = String(perk || '').trim().slice(0, SEAT_PERK_MAX);
+    if (perk) { var m = _seatLoad(cc); m.seats[no] = m.seats[no] || {}; m.seats[no].perk = perk; _seatSave(cc, m); }
     return { success: true, msg: "부동산 자산이 등록되었습니다." };
   } catch(e) { return { success: false, msg: e.message }; }
 }
@@ -4756,9 +4762,11 @@ function _newsSave(classCode, state) {
   sheet.appendRow([cc, json]);
 }
 // 지금 적용 중인 소식의 변동 % (없으면 모두 0)
+var NEWS_MAX_PCT = 5;                                   // 뉴스 한 번에 바뀌는 폭: -5% ~ +5% (학급 운영이 흔들리지 않게)
+function _newsCap(v) { v = Number(v) || 0; return Math.max(-NEWS_MAX_PCT, Math.min(NEWS_MAX_PCT, v)); }
 function _newsEffects(classCode) {
   var a = _newsLoad(classCode).active, e = (a && a.effects) || {};
-  return { rate: Number(e.rate) || 0, price: Number(e.price) || 0, rent: Number(e.rent) || 0, estate: Number(e.estate) || 0 };
+  return { rate: _newsCap(e.rate), price: _newsCap(e.price), rent: _newsCap(e.rent), estate: _newsCap(e.estate) };
 }
 function _newsPrice(base, pct) { return (pct && base > 0) ? Math.max(1, Math.round(base * (1 + pct / 100))) : base; }
 function _newsRate(base, pct) { return (pct && base > 0) ? Math.max(0.1, Math.round(base * (100 + pct) / 10) / 10) : base; }
@@ -4959,10 +4967,12 @@ function _newsBuild(classCode, state) {
   var nextAt = _newsNextMonday(), next = new Date(nextAt + KST_MS);
   var season = NEWS_SEASONS[next.getUTCMonth()], live = st.total > 0;   // 다음 주의 계절
   // 영향 계산: 돈이 많으면 이자↑ 물가↑, 예금이 너무 많으면 이자↓, 이자가 오르면 집값↓
-  var rate = _newsSum('rate', { M: 10 * z.M, B: -12 * z.B, S: 4 * z.S, I: 3 * z.I, X: live ? Math.random() * 4 - 2 : 0 }, -40, 40);
-  var price = _newsSum('price', { M: 8 * z.M, B: -3 * z.B, S: 6 * z.S, N: live ? season[1] : 0, X: live ? Math.random() * 2 - 1 : 0 }, -25, 30);
-  var estate = _newsSum('estate', { M: 5 * z.M, I: 4 * z.I, R: -0.25 * rate.v }, -20, 20);
-  var rent = _newsClamp(price.v * 0.6, -15, 15);
+  // 모든 변동은 -5% ~ +5% 안에서만 (NEWS_MAX_PCT)
+  var X = NEWS_MAX_PCT;
+  var rate = _newsSum('rate', { M: 1.25 * z.M, B: -1.5 * z.B, S: 0.5 * z.S, I: 0.4 * z.I, X: live ? Math.random() - 0.5 : 0 }, -X, X);
+  var price = _newsSum('price', { M: 1.2 * z.M, B: -0.5 * z.B, S: 0.9 * z.S, N: live ? season[1] * 0.5 : 0, X: live ? Math.random() * 0.6 - 0.3 : 0 }, -X, X);
+  var estate = _newsSum('estate', { M: 0.8 * z.M, I: 0.6 * z.I, R: -0.25 * rate.v }, -X, X);
+  var rent = _newsClamp(price.v * 0.6, -X, X);
 
   var weight = [['money', z.M * 1.1], ['tight', -z.M], ['saving', z.B * 1.2], ['nosave', -z.B * 0.9], ['boom', z.S], ['slump', -z.S * 0.95], ['invest', z.I * 1.15]]
     .sort(function (a, b) { return b[1] - a[1]; })[0];
@@ -5019,6 +5029,9 @@ function _newsView(classCode, state, msg) {
   [state.draft, state.announced, state.active].concat(state.history || []).forEach(function (n) {
     if (!n) return;
     if (!n.effectiveAt) n.effectiveAt = n.appliedAt || _newsNextMonday();
+    // 폭을 줄이기 전(±40%)에 만든 뉴스도 -5% ~ +5%로 맞춰 보여 줌 (실제 적용도 _newsEffects에서 같은 폭)
+    var e = n.effects || {}, big = ['rate', 'price', 'rent', 'estate'].some(function (k) { return Math.abs(Number(e[k]) || 0) > NEWS_MAX_PCT; });
+    if (big) { ['rate', 'price', 'rent', 'estate'].forEach(function (k) { if (k in e) e[k] = _newsCap(e[k]); }); n.forecast = _newsForecastOf(n, n.effectiveAt); }
     if (!n.forecast) n.forecast = _newsForecastOf(n, n.effectiveAt);
     if (!n.announcedAt) n.announcedAt = n.appliedAt || n.createdAt;
   });
@@ -5085,5 +5098,93 @@ function resetNews(classCode) {
     state.active = null;
     _newsSave(classCode, state);
     return _newsView(classCode, state, '적용 중인 소식을 해제했어요. 이자율과 물가가 원래대로 돌아왔습니다.');
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+
+// ==========================================
+// [부동산] 학급 자리 배치도 — 부동산 중개소 → 매물 등록
+//  - 종류가 '자리'인 매물이 교실 그림의 책상으로 보이고, 누르면 혜택·가격·소유자가 나옴
+//  - 선생님만 책상·칠판·교탁 등을 옮기고, 자리 혜택을 씀 (byTeacher)
+// SeatMap: [0]학급코드 [1]배치JSON {seats:{자산번호:{x,y,perk}}, items:[{id,kind,x,y}]}
+//  x, y는 교실 그림 안의 위치(%, 0~100). 위치가 없는 자리는 화면이 빈 곳에 줄 맞춰 놓음
+// ==========================================
+var SEAT_PERK_MAX = 120;
+var SEAT_KINDS = ['board', 'tdesk', 'door', 'window', 'locker', 'plant', 'tv'];
+function _seatDefault() {
+  return { seats: {}, items: [
+    { id: 'board', kind: 'board', x: 50, y: 7 }, { id: 'tdesk', kind: 'tdesk', x: 50, y: 17 },
+    { id: 'door', kind: 'door', x: 96, y: 93 }, { id: 'win1', kind: 'window', x: 2, y: 35 }, { id: 'win2', kind: 'window', x: 2, y: 72 }
+  ] };
+}
+function _seatLoad(classCode) {
+  var cc = cleanText(classCode), sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SeatMap'), m = null;
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { try { m = JSON.parse(String(data[i][1] || '')); } catch (e) { m = null; } break; }
+  }
+  m = m || _seatDefault();
+  m.seats = m.seats || {}; m.items = m.items || [];
+  return m;
+}
+function _seatSave(classCode, m) {
+  var cc = cleanText(classCode), ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName('SeatMap');
+  if (!sheet) { sheet = ss.insertSheet('SeatMap'); sheet.appendRow(['학급코드', '배치JSON']); }
+  var data = sheet.getDataRange().getValues(), json = JSON.stringify(m);
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(json); return; }
+  sheet.appendRow([cc, json]);
+}
+function _seatPos(v) { v = Number(v); return isFinite(v) ? Math.max(2, Math.min(98, Math.round(v * 10) / 10)) : null; }
+
+// 자리 배치도: 자리 매물(이름·가격·소유자·혜택·위치) + 칠판 같은 가구
+function getSeatMap(classCode) {
+  try {
+    var r = getRealEstateList(classCode);
+    if (!r.success) return r;
+    var m = _seatLoad(classCode);
+    var seats = r.list.filter(function (x) { return String(x.type).trim() === '자리'; }).map(function (x) {
+      var s = m.seats[String(x.assetNo).trim()] || {};
+      return { assetNo: String(x.assetNo).trim(), name: x.name, price: x.price, rent: x.rent, basePrice: x.basePrice, status: String(x.status || ''),
+        ownerNo: x.ownerNo, ownerName: String(x.status) === '매물' ? '' : x.ownerName, x: s.x == null ? null : s.x, y: s.y == null ? null : s.y, perk: s.perk || '' };
+    });
+    return { success: true, seats: seats, items: m.items };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 선생님이 옮긴 위치 저장. layout = {seats:{자산번호:{x,y}}, items:[{id,kind,x,y}]}
+function saveSeatLayout(classCode, layout, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '자리 배치는 선생님만 바꿀 수 있어요.' };
+    var m = _seatLoad(classCode), L = layout || {}, items = [];
+    Object.keys(L.seats || {}).slice(0, 100).forEach(function (no) {
+      var p = L.seats[no] || {}, x = _seatPos(p.x), y = _seatPos(p.y);
+      if (x === null || y === null) return;
+      no = String(no).trim().slice(0, 30);
+      m.seats[no] = m.seats[no] || {}; m.seats[no].x = x; m.seats[no].y = y;
+    });
+    (L.items || []).slice(0, 40).forEach(function (it, i) {
+      var x = _seatPos(it && it.x), y = _seatPos(it && it.y);
+      if (!it || SEAT_KINDS.indexOf(it.kind) < 0 || x === null || y === null) return;
+      items.push({ id: String(it.id || it.kind + i).replace(/[^\w-]/g, '').slice(0, 30) || (it.kind + i), kind: it.kind, x: x, y: y });
+    });
+    m.items = items;
+    _seatSave(classCode, m);
+    var r = getSeatMap(classCode); r.msg = '자리 배치를 저장했어요.';
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 선생님이 자리 혜택 쓰기 (빈칸이면 혜택 지움)
+function setSeatPerk(classCode, assetNo, perk, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '자리 혜택은 선생님만 쓸 수 있어요.' };
+    var no = String(assetNo || '').trim();
+    if (!no) return { success: false, msg: '자리를 골라 주세요.' };
+    var m = _seatLoad(classCode);
+    m.seats[no] = m.seats[no] || {};
+    m.seats[no].perk = String(perk || '').trim().slice(0, SEAT_PERK_MAX);
+    _seatSave(classCode, m);
+    var r = getSeatMap(classCode); r.msg = m.seats[no].perk ? '자리 혜택을 저장했어요.' : '자리 혜택을 지웠어요.';
+    return r;
   } catch (e) { return { success: false, msg: e.message }; }
 }
