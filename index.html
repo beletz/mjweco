@@ -1315,6 +1315,7 @@
       <div class="panel-tab act" onclick="policeTab('pol-fine',this)">🚓 벌금 부과 기록</div>
       <div class="panel-tab" onclick="policeTab('pol-law',this)">📜 벌칙 법전 조회</div>
       <div class="panel-tab" onclick="policeTab('pol-record',this)">🚨 학생별 위반(전과) 기록</div>
+      <div class="panel-tab" onclick="policeTab('pol-treasury',this)">🏛️ 벌금 통계 · 국고 환수</div>
     </div>
     <div id="pol-panels">
     <!-- 탭 2: 벌칙 법전 -->
@@ -1348,6 +1349,16 @@
           </div>
         </div>
         <div id="frec-list"><div class="empty-msg">불러오는 중...</div></div>
+      </div>
+    </div>
+    <!-- 탭 4: 벌금 통계 · 국고 환수 -->
+    <div id="pol-treasury" class="panel-content">
+      <div class="sc">
+        <div class="st">
+          <i class="fa-solid fa-landmark" style="color:var(--orange);"></i> 벌금 통계 · 국고 환수
+          <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadFineTreasury()"><i class="fa-solid fa-rotate-right"></i> 새로고침</button>
+        </div>
+        <div id="fine-tr-box"><div class="empty-msg">불러오는 중...</div></div>
       </div>
     </div>
     <!-- 탭 1: 벌금 부과 기록 -->

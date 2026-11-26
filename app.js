@@ -1723,6 +1723,66 @@ function policeTab(panelId, el){
   if(panelId==='pol-fine'){ loadFineLawChips(); loadFineLog(); loadFineRequestsMine(); }
   if(panelId==='pol-law') loadFineLawView();
   if(panelId==='pol-record') loadFineRecords();
+  if(panelId==='pol-treasury') loadFineTreasury();
+}
+
+// ── 벌금 통계 · 국고 환수 보고 (벌금 총액의 10%를 국고에 납부, Code.gs getFineTreasury) ──
+var _fineTr=null;
+function loadFineTreasury(){
+  var c=$('fine-tr-box'); if(!c) return;
+  c.innerHTML='<div class="empty-msg">⏳ 불러오는 중...</div>';
+  google.script.run
+    .withSuccessHandler(function(r){
+      _fineTr=(r&&r.success)?r:null;
+      if(!_fineTr){ c.innerHTML='<div class="empty-msg">불러오지 못했어요: '+esc(r&&r.msg)+'</div>'; return; }
+      renderFineTreasury();
+    })
+    .withFailureHandler(function(err){ c.innerHTML='<div class="empty-msg">오류: '+esc(err.message)+'</div>'; })
+    .getFineTreasury(_cc||_adminCC);
+}
+function renderFineTreasury(){
+  var c=$('fine-tr-box'), r=_fineTr; if(!c||!r) return;
+  var won=function(n){ return Number(n||0).toLocaleString()+' 머니'; };
+  var h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px;">';
+  h+='<div class="ac2 tot"><div class="ai">🚨</div><div class="al">벌금 총액</div><div class="av" style="font-size:17px;">'+won(r.total)+'</div></div>';
+  h+='<div class="ac2"><div class="ai" style="color:var(--red);">📋</div><div class="al">벌금 건수</div><div class="av" style="color:var(--red);">'+r.count+'건</div></div>';
+  h+='<div class="ac2"><div class="ai" style="color:var(--blue);">🧒</div><div class="al">벌금을 낸 학생</div><div class="av" style="color:var(--blue);">'+r.people+'명</div></div>';
+  h+='</div>';
+  var canPay=r.accrued>0;
+  h+='<div style="background:#FFFBEB;border:2px solid #FDE68A;border-radius:18px;padding:20px 22px;margin-bottom:20px;">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;">';
+  h+='<div><div style="font-family:Jua,sans-serif;font-size:20px;color:#92400E;margin-bottom:4px;">🏛️ 벌금 수익 국고 환수 보고</div>';
+  h+='<div style="font-size:14px;color:#B45309;line-height:1.5;">부과된 벌금 총액의 <b>10%</b>가 국고로 가요. <b>납부 완료</b>를 누르면 국세청 국고에 바로 들어가요.</div>';
+  h+='<div style="font-size:14px;color:#92400E;margin-top:6px;">벌금 총액의 10%: <b>'+won(r.due)+'</b> · 지금까지 납부: <b>'+won(r.paid)+'</b>'+(r.payCount?' ('+r.payCount+'번)':'')+'</div></div>';
+  h+='<div style="display:flex;align-items:center;gap:14px;">';
+  h+='<div style="text-align:right;"><div style="font-size:13px;color:#92400E;margin-bottom:2px;">이번에 낼 환수금</div>';
+  h+='<div style="font-family:Jua,sans-serif;font-size:26px;color:#D97706;">'+won(r.accrued)+'</div></div>';
+  h+='<button onclick="payFineTreasury()" '+(canPay?'':'disabled')+' style="background:'+(canPay?'#F59E0B':'#E5E7EB')+';color:'+(canPay?'white':'#9CA3AF')+';border:none;padding:12px 22px;border-radius:12px;font-size:15px;font-weight:700;cursor:'+(canPay?'pointer':'not-allowed')+';font-family:inherit;white-space:nowrap;"><i class="fa-solid fa-landmark"></i> 납부 완료</button>';
+  h+='</div></div></div>';
+  h+='<div class="st" style="margin-bottom:12px;"><i class="fa-solid fa-chart-bar" style="color:var(--red);"></i> 위반 사유별 벌금 현황</div>';
+  if(!r.reasons.length){ h+='<div class="empty-msg">아직 부과된 벌금이 없어요. 🕊️</div>'; c.innerHTML=h; return; }
+  var max=r.reasons[0].total||1;
+  h+='<div style="display:flex;flex-direction:column;gap:10px;">';
+  r.reasons.forEach(function(x){
+    h+='<div style="background:white;border:1.5px solid #E2E8F0;border-radius:12px;padding:14px 16px;">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;">';
+    h+='<span style="font-size:16px;font-weight:700;color:#1E293B;">'+esc(x.reason)+'</span>';
+    h+='<div style="text-align:right;"><div style="font-family:Jua,sans-serif;font-size:18px;color:#DC2626;">'+won(x.total)+'</div>';
+    h+='<div style="font-size:13px;color:#94A3B8;">'+x.count+'건</div></div></div>';
+    h+='<div style="background:#FEE2E2;border-radius:20px;height:8px;overflow:hidden;"><div style="height:100%;background:#EF4444;border-radius:20px;width:'+Math.round(x.total/max*100)+'%;"></div></div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  c.innerHTML=h;
+}
+async function payFineTreasury(){
+  if(!_fineTr||_fineTr.accrued<=0) return showToast('⚠️ 납부할 환수금이 없습니다.');
+  if(!await uiConfirm('벌금 수익 환수금 '+Number(_fineTr.accrued).toLocaleString()+' 머니를 국고에 납부할까요?\n국세청 국고에 바로 들어가요.')) return;
+  showLoading();
+  google.script.run
+    .withSuccessHandler(function(r){ hideLoading(); showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg); if(r.success) loadFineTreasury(); })
+    .withFailureHandler(function(err){ hideLoading(); alert('오류: '+err.message); })
+    .payFineTreasury(_cc||_adminCC, _sno||'');
 }
 
 // ── 위반 사유 버튼 (벌칙 법전과 연동) ──

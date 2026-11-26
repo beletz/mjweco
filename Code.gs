@@ -5188,3 +5188,51 @@ function setSeatPerk(classCode, assetNo, perk, byTeacher) {
     return r;
   } catch (e) { return { success: false, msg: e.message }; }
 }
+
+
+// ==========================================
+// [경찰서] 벌금 수익 국고 환수 보고 — 부과된 벌금 총액의 10%를 국고에 납부 (도매상 법인세와 같은 방식)
+//  적립액 = 벌금 총액의 10% − 이미 납부한 '[벌금 환수]' 국고 기록 합계
+//  (따로 시트 없이 매번 계산 → 벌금을 지우거나 국고 기록을 지워도 숫자가 저절로 맞음)
+// ==========================================
+var FINE_TREASURY_RATE = 0.1;
+var FINE_TREASURY_TAG = '[벌금 환수]';
+function getFineTreasury(classCode) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode);
+    var total = 0, count = 0, paid = 0, payCount = 0, by = {}, people = {};
+    getOrCreateTransSheet(ss).getDataRange().getValues().forEach(function (r, i) {
+      if (!i || cleanText(r[1]) !== cc || String(r[7] || '') !== '벌금') return;
+      var a = Number(r[5]) || 0, why = String(r[3] || '').replace(/^\[벌금\]\s*/, '') || '규정위반';
+      total += a; count++; people[String(r[2])] = 1;
+      by[why] = by[why] || { reason: why, count: 0, total: 0 };
+      by[why].count++; by[why].total += a;
+    });
+    getOrCreateTreasurySheet(ss).getDataRange().getValues().forEach(function (r, i) {
+      if (i && cleanText(r[0]) === cc && String(r[2] || '').indexOf(FINE_TREASURY_TAG) === 0 && String(r[5]) === '승인') { paid += Number(r[4]) || 0; payCount++; }
+    });
+    var due = Math.floor(total * FINE_TREASURY_RATE);
+    var reasons = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.total - a.total; });
+    return { success: true, total: total, count: count, people: Object.keys(people).length, due: due, paid: paid, payCount: payCount,
+             accrued: Math.max(0, due - paid), reasons: reasons };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 납부 완료: 국세청 국고에 바로 '승인' 상태로 적음 (자동 계산된 금액이라 선생님 승인 없이)
+function payFineTreasury(classCode, studentNo) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var r = getFineTreasury(classCode);
+    if (!r.success) return r;
+    if (r.accrued <= 0) return { success: false, msg: '납부할 환수금이 없습니다.' };
+    var cc = cleanText(classCode), key = cleanText(String(studentNo || '')) || '교사', today = getTodayStr();
+    getOrCreateTreasurySheet(SpreadsheetApp.getActiveSpreadsheet()).appendRow([cc, today,
+      FINE_TREASURY_TAG + ' 벌금 수익 10% 국고 납부 (벌금 총액 ' + r.total.toLocaleString() + ' 머니)', '수입', r.accrued, '승인', key, today]);
+    SpreadsheetApp.flush();
+    return { success: true, amount: r.accrued, msg: r.accrued.toLocaleString() + ' 머니 납부 완료! 국세청 국고에 반영되었습니다.' };
+  } catch (e) {
+    if (e.message.match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
+    return { success: false, msg: e.message };
+  } finally { lock.releaseLock(); }
+}
