@@ -43,7 +43,7 @@
     setSalaryTable: '급여표 저장', setBankSettings: '이자율 저장', setDepositCreditSettings: '설정 저장', setDepositPenaltySettings: '하락 설정 저장',
     setCreditGradeSettings: '설정 저장', setHomeworkCreditSettings: '설정 저장',
     // 뉴스룸
-    generateNews: 'AI 뉴스 만들기', applyNews: '속보 적용', resetNews: '속보 해제',
+    generateNews: 'AI 뉴스 만들기', announceNews: '전망 공표', cancelAnnouncement: '공표 취소', resetNews: '경제 소식 해제',
     // 은행 잔액 정리는 실제로 바꿀 때(두 번째 값이 true)만
     repairBankBalances: function (args) { return args[1] === true ? '은행 잔액 정리' : null; }
   };

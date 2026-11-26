@@ -4734,8 +4734,8 @@ function bulkUpdateStudents(classCode, itemsJson) {
 // ==========================================
 // 📰 학급 경제 뉴스룸 (마스터 → 뉴스룸)
 // 학급의 돈·예금·매점·투자 상태를 보고 사이트 안의 계산 규칙("AI 뉴스 엔진")이 매주 뉴스를 만듦 (외부 AI 사용 안 함)
-// Newsroom: [0]학급코드 [1]상태JSON { issue, draft(이번 주 뉴스), active(발효 중인 속보), snaps(주별 기록), history }
-// 적용하면 원래 값은 그대로 두고 active.effects(%)를 덮어씌워 계산함 → 속보를 해제하면 원래 값으로 돌아감
+// Newsroom: [0]학급코드 [1]상태JSON { issue, draft(이번 주에 만든 다음 주 전망), announced(공표한 전망), active(지금 적용 중), snaps(주별 기록), history }
+// 공표하면 다음 주 월요일 0시에 active가 됨. 원래 값은 그대로 두고 active.effects(%)를 덮어씌워 계산함 → 해제하면 원래 값으로 돌아감
 // ==========================================
 function _newsLoad(classCode) {
   var cc = cleanText(classCode), sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Newsroom'), state = null;
@@ -4743,7 +4743,10 @@ function _newsLoad(classCode) {
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { try { state = JSON.parse(String(data[i][1] || '')); } catch (e) { state = null; } break; }
   }
-  return state || { issue: 0, draft: null, active: null, snaps: [], history: [] };
+  state = state || { issue: 0, draft: null, active: null, snaps: [], history: [] };
+  // 공표한 전망은 적용일(다음 주 월요일 0시)이 되면 저절로 실현됨 (저장은 다음에 상태를 저장할 때 함께)
+  if (state.announced && Date.now() >= state.announced.effectiveAt) { state.active = state.announced; state.announced = null; }
+  return state;
 }
 function _newsSave(classCode, state) {
   var cc = cleanText(classCode), ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName('Newsroom');
@@ -4752,14 +4755,14 @@ function _newsSave(classCode, state) {
   for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(json); return; }
   sheet.appendRow([cc, json]);
 }
-// 발효 중인 속보의 변동 % (없으면 모두 0)
+// 지금 적용 중인 소식의 변동 % (없으면 모두 0)
 function _newsEffects(classCode) {
   var a = _newsLoad(classCode).active, e = (a && a.effects) || {};
   return { rate: Number(e.rate) || 0, price: Number(e.price) || 0, rent: Number(e.rent) || 0, estate: Number(e.estate) || 0 };
 }
 function _newsPrice(base, pct) { return (pct && base > 0) ? Math.max(1, Math.round(base * (1 + pct / 100))) : base; }
 function _newsRate(base, pct) { return (pct && base > 0) ? Math.max(0.1, Math.round(base * (100 + pct) / 10) / 10) : base; }
-// 은행 이자율에 속보를 덮어씌움. 원래 이자율은 base에 남김
+// 은행 이자율에 적용 중인 소식을 덮어씌움. 원래 이자율은 base에 남김
 function _newsBankRates(classCode, r) {
   var pct = _newsEffects(classCode).rate;
   r.base = { r1: r.r1, r2: r.r2, r3: r.r3, r4: r.r4 };
@@ -4770,6 +4773,10 @@ function _newsBankRates(classCode, r) {
 
 function _newsYmd(v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd') : String(v || '').slice(0, 10); }
 function _newsDay(offset) { return Utilities.formatDate(new Date(Date.now() + offset * 86400000), 'Asia/Seoul', 'yyyy-MM-dd'); }
+function _newsNextMonday() {                            // 다음 주 월요일 0시 (한국 시간)
+  var p = _newsWeek().split('-');
+  return Date.UTC(+p[0], +p[1] - 1, +p[2] + 7) - KST_MS;
+}
 function _newsWeek() {                                  // 이번 주 월요일 (한국 시간)
   var k = new Date(Date.now() + KST_MS);
   return _newsDay(-((k.getUTCDay() + 6) % 7));
@@ -4910,11 +4917,11 @@ var NEWS_SEASONS = [
   ['가을걷이 철에는 쌀과 과일이 많이 나와 값이 내려가요.', -2], ['김장철에는 배추와 무를 찾는 집이 늘어 채솟값이 움직여요.', 1], ['연말에는 선물과 모임으로 소비가 늘어요.', 2]
 ];
 var NEWS_WHY = {
-  rate: { 'M+': '친구들 손에 돈이 많아서, 저축하도록 이자를 올려요.', 'M-': '돈이 잘 돌지 않아서, 쓰고 투자하도록 이자를 내려요.', 'B-': '은행에 돈이 너무 많이 모여서 이자를 내려요.', 'B+': '은행에 맡긴 돈이 적어서, 손님을 모으려고 이자를 올려요.',
-    'S+': '소비가 너무 뜨거워서, 식히려고 이자를 올려요.', 'S-': '매점이 한산해서, 돈을 쓰도록 이자를 내려요.', 'I+': '투자로 돈이 몰려서, 은행도 손님을 붙잡으려고 이자를 올려요.', 'I-': '투자가 조용해서 은행도 이자를 조금 내려요.' },
-  price: { 'M+': '쓸 돈이 많아져서 물건값이 올라요.', 'M-': '쓸 돈이 줄어서 물건값을 내려요.', 'B-': '돈이 은행에 묶여 있어서 물건값이 내려가요.', 'B+': '저축보다 소비에 돈이 몰려 물건값이 올라요.',
-    'S+': '찾는 사람이 많아서 물건값이 올라요.', 'S-': '물건이 잘 안 팔려서 값을 내려요.', 'N+': '계절 영향으로 물건값이 조금 올라요.', 'N-': '계절 영향으로 물건값이 조금 내려요.' },
-  estate: { 'M+': '돈이 많아지면서 자리를 사려는 친구가 늘어요.', 'M-': '돈이 귀해져서 자리를 사려는 친구가 줄어요.', 'I+': '투자 열기가 부동산까지 번졌어요.', 'I-': '투자가 조용해서 자리 값도 내려가요.', 'R-': '이자가 올라서 자리보다 예금을 고르는 친구가 늘어요.', 'R+': '이자가 내려서 예금 대신 자리를 사려는 친구가 늘어요.' }
+  rate: { 'M+': '친구들 손에 돈이 많아서, 저축하도록 이자를 올릴 예정이에요.', 'M-': '돈이 잘 돌지 않아서, 쓰고 투자하도록 이자를 내릴 예정이에요.', 'B-': '은행에 돈이 너무 많이 모여서 이자를 내릴 예정이에요.', 'B+': '은행에 맡긴 돈이 적어서, 손님을 모으려고 이자를 올릴 예정이에요.',
+    'S+': '소비가 너무 뜨거워서, 식히려고 이자를 올릴 예정이에요.', 'S-': '매점이 한산해서, 돈을 쓰도록 이자를 내릴 예정이에요.', 'I+': '투자로 돈이 몰려서, 은행도 손님을 붙잡으려고 이자를 올릴 예정이에요.', 'I-': '투자가 조용해서 은행도 이자를 조금 내릴 예정이에요.' },
+  price: { 'M+': '쓸 돈이 많아져서 물건값이 오를 예정이에요.', 'M-': '쓸 돈이 줄어서 물건값이 내릴 예정이에요.', 'B-': '돈이 은행에 묶여 있어서 물건값이 내릴 예정이에요.', 'B+': '저축보다 소비에 돈이 몰려서 물건값이 오를 예정이에요.',
+    'S+': '찾는 사람이 많아서 물건값이 오를 예정이에요.', 'S-': '물건이 잘 안 팔려서 값을 내릴 예정이에요.', 'N+': '계절 영향으로 물건값이 조금 오를 예정이에요.', 'N-': '계절 영향으로 물건값이 조금 내릴 예정이에요.' },
+  estate: { 'M+': '돈이 많아져서 자리를 사려는 친구가 늘어날 거예요.', 'M-': '돈이 귀해져서 자리를 사려는 친구가 줄어들 거예요.', 'I+': '투자 열기가 부동산까지 번질 거예요.', 'I-': '투자가 조용해서 자리 값도 내려갈 거예요.', 'R-': '이자가 오르면 자리보다 예금을 고르는 친구가 늘어날 거예요.', 'R+': '이자가 내리면 예금 대신 자리를 사려는 친구가 늘어날 거예요.' }
 };
 function _newsSum(kind, parts, lo, hi) {                // 영향들을 더하고, 가장 큰 이유 한 가지를 고름
   var sum = 0; Object.keys(parts).forEach(function (k) { sum += parts[k]; });
@@ -4922,7 +4929,17 @@ function _newsSum(kind, parts, lo, hi) {                // 영향들을 더하�
   Object.keys(parts).forEach(function (k) {
     if (v !== 0 && parts[k] * v > 0 && Math.abs(parts[k]) > size && NEWS_WHY[kind][k + (v > 0 ? '+' : '-')]) { size = Math.abs(parts[k]); best = NEWS_WHY[kind][k + (v > 0 ? '+' : '-')]; }
   });
-  return { v: v, why: v === 0 ? '큰 변화가 없어서 원래대로 둬요.' : (best || '시장 분위기에 따라 조금 움직여요.') };
+  return { v: v, why: v === 0 ? '큰 변화가 없어서 지금처럼 둘 예정이에요.' : (best || '시장 분위기에 따라 조금 움직일 예정이에요.') };
+}
+// "12월 1일(월)부터 예금 이자율은 20% 오르고, 매점 물가는 12% 오를 예정이에요."
+function _newsForecast(next, list) {
+  var when = (next.getUTCMonth() + 1) + '월 ' + next.getUTCDate() + '일(월)부터 ';
+  var moves = list.filter(function (x) { return x[1]; });
+  if (!moves.length) return '그래서 ' + when + '예금 이자율과 물가는 지금처럼 그대로일 예정이에요.';
+  return '그래서 ' + when + moves.map(function (x, i) {
+    var up = x[1] > 0, last = i === moves.length - 1;
+    return x[0] + ' ' + Math.abs(x[1]) + '% ' + (last ? (up ? '오를 예정이에요.' : '내릴 예정이에요.') : (up ? '오르고' : '내리고'));
+  }).join(', ');
 }
 
 function _newsBuild(classCode, state) {
@@ -4930,7 +4947,8 @@ function _newsBuild(classCode, state) {
   var prev = null;
   (state.snaps || []).forEach(function (s) { if (s.week < week) prev = s; });
   var z = _newsScores(st, prev);
-  var season = NEWS_SEASONS[Number(week.slice(5, 7)) - 1], live = st.total > 0;
+  var nextAt = _newsNextMonday(), next = new Date(nextAt + KST_MS);
+  var season = NEWS_SEASONS[next.getUTCMonth()], live = st.total > 0;   // 다음 주의 계절
   // 영향 계산: 돈이 많으면 이자↑ 물가↑, 예금이 너무 많으면 이자↓, 이자가 오르면 집값↓
   var rate = _newsSum('rate', { M: 10 * z.M, B: -12 * z.B, S: 4 * z.S, I: 3 * z.I, X: live ? Math.random() * 4 - 2 : 0 }, -40, 40);
   var price = _newsSum('price', { M: 8 * z.M, B: -3 * z.B, S: 6 * z.S, N: live ? season[1] : 0, X: live ? Math.random() * 2 - 1 : 0 }, -25, 30);
@@ -4954,10 +4972,10 @@ function _newsBuild(classCode, state) {
   var top = st.top.length ? '가장 인기 있는 물건은 ' + st.top[0].name + '(' + st.top[0].qty + '개)였어요.' : '';
   var best = st.stocks.slice().sort(function (a, b) { return b.pct - a.pct; })[0];
   var articles = [
-    { icon: '💰', title: '우리 반 살림', text: '친구 ' + st.count + '명이 가진 돈은 모두 ' + won(st.total) + '예요. 한 사람 평균은 ' + won(st.avg) + (st.growth === undefined ? '입니다.' : '로, 지난번보다 ' + (st.growth > 0 ? st.growth + '% 늘었어요.' : st.growth < 0 ? Math.abs(st.growth) + '% 줄었어요.' : '그대로예요.')) },
-    { icon: '🏦', title: '은행 소식', text: '은행에는 ' + won(st.bank) + '가 들어 있어요(전체의 ' + ratio(st.bank) + '%). 최근 7일 동안 새 예금 ' + st.newDep + '건, 중도 해지 ' + st.early + '건이 있었어요.' },
-    { icon: '🛒', title: '매점 소식', text: st.items ? '최근 7일 동안 물건 ' + st.sold + '개가 팔렸어요. ' + top + (st.soldOut ? ' 다 팔린 물건도 ' + st.soldOut + '가지 있어요.' : '') : '아직 매점에 등록된 물건이 없어요.' },
-    { icon: '📈', title: '증권 소식', text: '친구들이 가진 주식은 ' + won(st.stock) + '어치예요. ' + (best && best.pct !== 0 ? '최근 7일 동안 ' + best.emoji + ' ' + best.name + ' 주가가 ' + (best.pct > 0 ? best.pct + '% 올랐어요.' : Math.abs(best.pct) + '% 내렸어요.') : '최근 7일 동안 주가는 크게 움직이지 않았어요.') }
+    { icon: '💰', title: '이번 주 우리 반 살림', text: '친구 ' + st.count + '명이 가진 돈은 모두 ' + won(st.total) + '예요. 한 사람 평균은 ' + won(st.avg) + (st.growth === undefined ? '입니다.' : '로, 지난번보다 ' + (st.growth > 0 ? st.growth + '% 늘었어요.' : st.growth < 0 ? Math.abs(st.growth) + '% 줄었어요.' : '그대로예요.')) },
+    { icon: '🏦', title: '이번 주 은행', text: '은행에는 ' + won(st.bank) + '가 들어 있어요(전체의 ' + ratio(st.bank) + '%). 최근 7일 동안 새 예금 ' + st.newDep + '건, 중도 해지 ' + st.early + '건이 있었어요.' },
+    { icon: '🛒', title: '이번 주 매점', text: st.items ? '최근 7일 동안 물건 ' + st.sold + '개가 팔렸어요. ' + top + (st.soldOut ? ' 다 팔린 물건도 ' + st.soldOut + '가지 있어요.' : '') : '아직 매점에 등록된 물건이 없어요.' },
+    { icon: '📈', title: '이번 주 증권', text: '친구들이 가진 주식은 ' + won(st.stock) + '어치예요. ' + (best && best.pct !== 0 ? '최근 7일 동안 ' + best.emoji + ' ' + best.name + ' 주가가 ' + (best.pct > 0 ? best.pct + '% 올랐어요.' : Math.abs(best.pct) + '% 내렸어요.') : '최근 7일 동안 주가는 크게 움직이지 않았어요.') }
   ];
   var b = getBankSettings(classCode);
   if (!b.success) throw new Error(b.msg);
@@ -4966,7 +4984,9 @@ function _newsBuild(classCode, state) {
     category: key, emoji: cat.emoji, tag: cat.tag, title: _newsPick(cat.titles, last), lead: _newsPick(cat.leads),
     articles: articles, world: cat.world, season: season[0], tips: cat.tips, signals: signals,
     effects: { rate: rate.v, price: price.v, rent: rent, estate: estate.v },
-    why: { rate: rate.why, price: price.why, rent: rent === 0 ? '큰 변화가 없어서 원래대로 둬요.' : '물가를 따라 자리 임대료도 함께 ' + (rent > 0 ? '올라요.' : '내려요.'), estate: estate.why },
+    forecast: _newsForecast(next, [['예금 이자율은', rate.v], ['매점 물가는', price.v]].concat(st.estates ? [['자리 매매가는', estate.v], ['자리 임대료는', rent]] : [])),
+    effectiveAt: nextAt,
+    why: { rate: rate.why, price: price.why, rent: rent === 0 ? '큰 변화가 없어서 지금처럼 둘 예정이에요.' : '물가를 따라 자리 임대료도 함께 ' + (rent > 0 ? '오를 예정이에요.' : '내릴 예정이에요.'), estate: estate.why },
     baseRates: b.base, share: { card: ratio(st.card), bank: ratio(st.bank), stock: st.total ? 100 - ratio(st.card) - ratio(st.bank) : 0 },
     top: st.top, stocks: st.stocks, estates: st.estates, snap: { week: week, avg: st.avg, total: st.total }
   };
@@ -4983,14 +5003,17 @@ function _newsView(classCode, state, msg) {
   var cc = cleanText(classCode), name = '';
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Classes');
   if (sheet) sheet.getDataRange().getValues().forEach(function (r, i) { if (i && cleanText(r[1]) === cc) name = String(r[0] || ''); });
-  return { success: true, msg: msg || '', className: name, draft: state.draft, active: state.active, history: state.history || [] };
+  // 이자율 그림은 지금의 원래 이자율로 (선생님이 그사이 바꿨을 수 있음)
+  var b = getBankSettings(classCode);
+  [state.draft, state.announced, state.active].forEach(function (n) { if (n && b.success) n.baseRates = b.base; });
+  return { success: true, msg: msg || '', className: name, draft: state.draft, announced: state.announced || null, active: state.active, history: state.history || [] };
 }
 
-// 학생 화면용 — 발효 중인 속보만 돌려줌 (적용 전 뉴스는 보여 주지 않음)
+// 학생 화면용 — 공표한 전망과 지금 적용 중인 소식만 돌려줌 (공표 전 뉴스는 보여 주지 않음)
 function getActiveNews(classCode) {
   try {
     var v = _newsView(classCode, _newsLoad(classCode));
-    return { success: true, className: v.className, active: v.active };
+    return { success: true, className: v.className, announced: v.announced, active: v.active };
   } catch (e) { return { success: false, msg: e.message }; }
 }
 // 뉴스룸 열기 — 이번 주 뉴스가 아직 없으면 자동으로 만듦
@@ -5008,26 +5031,37 @@ function generateNews(classCode) {
     return _newsView(classCode, state, 'AI가 지금 학급 상태로 새 뉴스를 만들었어요.');
   } catch (e) { return { success: false, msg: e.message }; }
 }
-function applyNews(classCode, newsId) {
+// 다음 주 전망 공표 — 다음 주 월요일 0시에 저절로 적용됨 (_newsLoad)
+function announceNews(classCode, newsId) {
   try {
     var state = _newsLoad(classCode);
     if (!state.draft || state.draft.id !== newsId) return { success: false, msg: '그사이 뉴스가 새로 만들어졌어요. 화면을 다시 열어 확인해 주세요.' };
-    var b = getBankSettings(classCode);
-    if (!b.success) return b;
-    state.draft.baseRates = b.base;
-    state.draft.appliedAt = Date.now();
-    state.active = state.draft;
+    state.draft.announcedAt = Date.now();
+    state.draft.effectiveAt = _newsNextMonday();
+    state.announced = state.draft;
     state.history = [state.draft].concat((state.history || []).filter(function (h) { return h.id !== newsId; })).slice(0, 10);
     _newsSave(classCode, state);
-    return _newsView(classCode, state, '속보가 발효됐어요! 예금 이자율과 물가가 바뀌었습니다.');
+    var d = new Date(state.draft.effectiveAt + KST_MS);
+    return _newsView(classCode, state, '다음 주 경제 전망을 공표했어요! ' + (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일(월)부터 저절로 적용돼요.');
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+function cancelAnnouncement(classCode) {
+  try {
+    var state = _newsLoad(classCode);
+    if (!state.announced) return { success: false, msg: '공표해 둔 전망이 없어요. (이미 적용됐다면 "현재 소식 해제"를 눌러 주세요.)' };
+    var id = state.announced.id;
+    state.announced = null;
+    state.history = (state.history || []).filter(function (h) { return h.id !== id; });
+    _newsSave(classCode, state);
+    return _newsView(classCode, state, '공표를 취소했어요. 다음 주에도 지금 값 그대로예요.');
   } catch (e) { return { success: false, msg: e.message }; }
 }
 function resetNews(classCode) {
   try {
     var state = _newsLoad(classCode);
-    if (!state.active) return { success: false, msg: '지금 발효 중인 속보가 없어요.' };
+    if (!state.active) return { success: false, msg: '지금 적용 중인 경제 소식이 없어요.' };
     state.active = null;
     _newsSave(classCode, state);
-    return _newsView(classCode, state, '속보를 해제했어요. 이자율과 물가가 원래대로 돌아왔습니다.');
+    return _newsView(classCode, state, '적용 중인 소식을 해제했어요. 이자율과 물가가 원래대로 돌아왔습니다.');
   } catch (e) { return { success: false, msg: e.message }; }
 }
