@@ -514,11 +514,12 @@ function getBankSettings(classCode) {
       if (cleanText(data[i][0]) === cc) {
         var p = (data[i][5] !== undefined && data[i][5] !== '') ? Number(data[i][5]) : 2.0;
         var result = { success: true, r1: Number(data[i][1])||3, r2: Number(data[i][2])||5, r3: Number(data[i][3])||8, r4: Number(data[i][4])||12, prime: p };
+        _newsBankRates(classCode, result);
         _setCache('banksettings', classCode, result, 120);
         return result;
       }
     }
-    var def = { success: true, r1: 3, r2: 5, r3: 8, r4: 12, prime: 2.0 };
+    var def = _newsBankRates(classCode, { success: true, r1: 3, r2: 5, r3: 8, r4: 12, prime: 2.0 });
     _setCache('banksettings', classCode, def, 120);
     return def;
   } catch(e) { return { success: false, msg: e.message }; }
@@ -1359,7 +1360,7 @@ function getRealEstateList(classCode) {
     for (var i=1; i<stuData.length; i++) {
       if (cleanText(stuData[i][0])===cc) nameMap[String(stuData[i][1])]=stuData[i][2]||'';
     }
-    var list = [];
+    var list = [], fx = _newsEffects(cc);
     for (var j = 1; j < reData.length; j++) {
       if (cleanText(reData[j][0])===cc) {
         var owner = String(reData[j][4]);
@@ -1370,8 +1371,10 @@ function getRealEstateList(classCode) {
           type:      reData[j][3],
           ownerNo:   owner,
           ownerName: nameMap[owner]||'국가',
-          price:     Number(reData[j][5])||0,
-          rent:      Number(reData[j][6])||0,
+          price:     _newsPrice(Number(reData[j][5])||0, fx.estate),
+          rent:      _newsPrice(Number(reData[j][6])||0, fx.rent),
+          basePrice: Number(reData[j][5])||0,
+          baseRent:  Number(reData[j][6])||0,
           status:    reData[j][7]
         });
       }
@@ -1411,7 +1414,7 @@ function buyRealEstate(classCode, studentNo, assetNo) {
         if (cleanText(reData[j][7]) !== '매물') {
           return { success: false, msg: "앗! 누군가 방금 먼저 구매했습니다. 😭" };
         }
-        reRowIdx=j+1; price=Number(reData[j][5])||0; assetName=reData[j][2]; break;
+        reRowIdx=j+1; price=_newsPrice(Number(reData[j][5])||0, _newsEffects(cc).estate); assetName=reData[j][2]; break;
       }
     }
     if (reRowIdx===-1) return { success: false, msg: "해당 매물을 찾을 수 없습니다." };
@@ -2795,10 +2798,10 @@ function getWholesaleItems(classCode, studentNo) {
     var sheet = getOrCreateWholesaleItemsSheet(ss);
     var data  = sheet.getDataRange().getValues();
     var cc    = cleanText(classCode), sno = cleanText(String(studentNo));
-    var list  = [];
+    var list  = [], newsPct = _newsEffects(cc).price;
     for (var i = 1; i < data.length; i++) {
       if (cleanText(data[i][0])===cc && cleanText(String(data[i][1]))===sno) {
-        list.push({ rowNo: i, name: String(data[i][2]||''), price: Number(data[i][3])||0, stock: Number(data[i][4])||0, sold: Number(data[i][5])||0 });
+        list.push({ rowNo: i, name: String(data[i][2]||''), price: _newsPrice(Number(data[i][3])||0, newsPct), basePrice: Number(data[i][3])||0, stock: Number(data[i][4])||0, sold: Number(data[i][5])||0 });
       }
     }
     return { success: true, list: list };
@@ -2899,13 +2902,6 @@ function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, 
     }
     if (buyerRowIdx === -1) return { success: false, msg: '구매자를 찾을 수 없습니다.' };
 
-    // ★ 인플레이션 적용 (카드 5,000 이상일 때 1.5배)
-    var infl = calcWholesaleInflation(buyerCard, price, qty);
-    total = infl.total;
-    var inflNote = infl.inflated > 0 ? ' (인플레이션 1.5배 ' + infl.inflated + '개)' : '';
-
-    if (buyerCard < total)  return { success: false, msg: '구매자 카드 잔액이 부족합니다. (보유: ' + buyerCard + ' 머니, 필요: ' + total + ' 머니)' };
-
     // ── 판매자 조회 (학생 판매자일 때만) ──
     var sellerRowIdx = -1, sellerCard = 0;
     var isTeacherSeller = !sellerSno; // sellerSno 없으면 교사 모드
@@ -2942,6 +2938,20 @@ function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, 
     }
     if (itemRowIdx !== -1 && itemStock < qty)
       return { success: false, msg: '재고가 부족합니다. (현재 재고: ' + itemStock + '개)' };
+
+    // ★ 뉴스룸 속보 물가: 화면에 남아 있던 옛 가격으로 팔리지 않게 서버 가격과 비교
+    if (itemRowIdx !== -1) {
+      var nowPrice = _newsPrice(Number(itemData[itemRowIdx - 1][3]) || 0, _newsEffects(cc).price);
+      if (nowPrice > 0 && nowPrice !== price)
+        return { success: false, msg: '지금 ' + itemName + ' 가격은 ' + nowPrice.toLocaleString() + ' 머니예요. 물건을 다시 골라 주세요.' };
+    }
+
+    // ★ 인플레이션 적용 (카드 5,000 이상일 때 1.5배)
+    var infl = calcWholesaleInflation(buyerCard, price, qty);
+    total = infl.total;
+    var inflNote = infl.inflated > 0 ? ' (인플레이션 1.5배 ' + infl.inflated + '개)' : '';
+
+    if (buyerCard < total)  return { success: false, msg: '구매자 카드 잔액이 부족합니다. (보유: ' + buyerCard + ' 머니, 필요: ' + total + ' 머니)' };
 
     // ── ★ 구매자 카드 차감 먼저 처리 ──
     var newBuyerCard = buyerCard - total;
@@ -3387,6 +3397,7 @@ function resetClassEconomy(classCode) {
     var wsTaxCnt   = _clearSheetForClass('WholesaleCorpTax', cc);
     var hwCnt      = _clearSheetForClass('Homework', cc);
     var hwStCnt    = _clearSheetForClass('HomeworkStatus', cc);
+    _clearSheetForClass('Newsroom', cc);   // 뉴스룸 속보도 해제
 
     // 4. 부동산은 매물 정보(이름/가격 등)는 유지, 소유권만 초기화
     var reSheet = ss.getSheetByName('RealEstate');
@@ -4142,18 +4153,18 @@ function getStorePriceBoard(classCode, studentNo) {
       if (no === sno) card = Number(stuData[k][4]) || 0;
     }
     var data = getOrCreateWholesaleItemsSheet(ss).getDataRange().getValues();
-    var list = [];
+    var list = [], newsPct = _newsEffects(cc).price;
     for (var i = 1; i < data.length; i++) {
       if (cleanText(data[i][0]) !== cc) continue;
       var seller = cleanText(String(data[i][1]));
-      var price = Number(data[i][3]) || 0;
+      var price = _newsPrice(Number(data[i][3]) || 0, newsPct);
       list.push({ seller: seller, sellerName: nameMap[seller] || '', name: String(data[i][2] || ''), price: price,
                   stock: Number(data[i][4]) || 0, sold: Number(data[i][5]) || 0,
                   myPrice: card >= WS_INFLATION_LINE ? Math.round(price * WS_INFLATION_RATE) : price });
     }
     list.sort(function (a, b) { return a.price - b.price; });
     return { success: true, list: list, card: card, inflated: sno !== '' && card >= WS_INFLATION_LINE,
-             line: WS_INFLATION_LINE, rate: WS_INFLATION_RATE };
+             line: WS_INFLATION_LINE, rate: WS_INFLATION_RATE, newsPct: newsPct };
   } catch (e) { return { success: false, msg: e.message }; }
 }
 
@@ -4717,5 +4728,306 @@ function bulkUpdateStudents(classCode, itemsJson) {
     try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
     if (!saved) return { success: false, msg: '저장하지 못했어요.\n' + bad.join(', ') };
     return { success: true, saved: saved, msg: saved + '명의 정보를 저장했어요.' + (bad.length ? '\n저장하지 못한 학생: ' + bad.join(', ') : '') };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// ==========================================
+// 📰 학급 경제 뉴스룸 (마스터 → 뉴스룸)
+// 학급의 돈·예금·매점·투자 상태를 보고 사이트 안의 계산 규칙("AI 뉴스 엔진")이 매주 뉴스를 만듦 (외부 AI 사용 안 함)
+// Newsroom: [0]학급코드 [1]상태JSON { issue, draft(이번 주 뉴스), active(발효 중인 속보), snaps(주별 기록), history }
+// 적용하면 원래 값은 그대로 두고 active.effects(%)를 덮어씌워 계산함 → 속보를 해제하면 원래 값으로 돌아감
+// ==========================================
+function _newsLoad(classCode) {
+  var cc = cleanText(classCode), sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Newsroom'), state = null;
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { try { state = JSON.parse(String(data[i][1] || '')); } catch (e) { state = null; } break; }
+  }
+  return state || { issue: 0, draft: null, active: null, snaps: [], history: [] };
+}
+function _newsSave(classCode, state) {
+  var cc = cleanText(classCode), ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName('Newsroom');
+  if (!sheet) { sheet = ss.insertSheet('Newsroom'); sheet.appendRow(['학급코드', '상태JSON']); }
+  var data = sheet.getDataRange().getValues(), json = JSON.stringify(state);
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(json); return; }
+  sheet.appendRow([cc, json]);
+}
+// 발효 중인 속보의 변동 % (없으면 모두 0)
+function _newsEffects(classCode) {
+  var a = _newsLoad(classCode).active, e = (a && a.effects) || {};
+  return { rate: Number(e.rate) || 0, price: Number(e.price) || 0, rent: Number(e.rent) || 0, estate: Number(e.estate) || 0 };
+}
+function _newsPrice(base, pct) { return (pct && base > 0) ? Math.max(1, Math.round(base * (1 + pct / 100))) : base; }
+function _newsRate(base, pct) { return (pct && base > 0) ? Math.max(0.1, Math.round(base * (100 + pct) / 10) / 10) : base; }
+// 은행 이자율에 속보를 덮어씌움. 원래 이자율은 base에 남김
+function _newsBankRates(classCode, r) {
+  var pct = _newsEffects(classCode).rate;
+  r.base = { r1: r.r1, r2: r.r2, r3: r.r3, r4: r.r4 };
+  r.newsPct = pct;
+  ['r1', 'r2', 'r3', 'r4'].forEach(function (k) { r[k] = _newsRate(r[k], pct); });
+  return r;
+}
+
+function _newsYmd(v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd') : String(v || '').slice(0, 10); }
+function _newsDay(offset) { return Utilities.formatDate(new Date(Date.now() + offset * 86400000), 'Asia/Seoul', 'yyyy-MM-dd'); }
+function _newsWeek() {                                  // 이번 주 월요일 (한국 시간)
+  var k = new Date(Date.now() + KST_MS);
+  return _newsDay(-((k.getUTCDay() + 6) % 7));
+}
+
+// 학급 경제 상태 모으기 (선생님 0번 계정은 빼고 학생만)
+function _newsStats(classCode) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode);
+  var st = { count: 0, card: 0, bank: 0, stock: 0, rich: 0 };
+  var stockMap = _stockValueMap(cc), students = {};
+  getOrCreateStudentsSheet(ss).getDataRange().getValues().forEach(function (r, i) {
+    var sno = cleanText(String(r[1]));
+    if (!i || cleanText(r[0]) !== cc || sno === '0') return;
+    students[sno] = true;
+    st.count++; st.card += Number(r[4]) || 0; st.bank += Number(r[5]) || 0; st.stock += stockMap[sno] || 0;
+    if ((Number(r[4]) || 0) >= WS_INFLATION_LINE) st.rich++;
+  });
+  st.total = st.card + st.bank + st.stock;
+  st.avg = st.count ? Math.round(st.total / st.count) : 0;
+
+  var from = _newsDay(-6), before = _newsDay(-13);      // 최근 7일 / 그 앞 7일
+  st.newDep = 0; st.newDepAmt = 0; st.early = 0; st.buyAmt = 0; st.sellAmt = 0;
+  getOrCreateTransSheet(ss).getDataRange().getValues().forEach(function (r, i) {
+    if (!i || cleanText(r[1]) !== cc || !students[cleanText(String(r[2]))] || _newsYmd(r[0]) < from) return;
+    var type = String(r[7]);
+    if (type === '예금가입') { st.newDep++; st.newDepAmt += Number(r[5]) || 0; }
+    else if (type === '예금중도해지') st.early++;
+    else if (type === '주식매수') st.buyAmt += Number(r[5]) || 0;
+    else if (type === '주식매도') st.sellAmt += Number(r[4]) || 0;
+  });
+  st.activeDep = 0;
+  getOrCreateDepositsSheet(ss).getDataRange().getValues().forEach(function (r, i) {
+    if (i && cleanText(r[0]) === cc && cleanText(r[7]) === '활성') st.activeDep++;
+  });
+
+  st.sold = 0; st.soldAmt = 0; st.soldBefore = 0;
+  var by = {};
+  getOrCreateWholesaleSalesSheet(ss).getDataRange().getValues().forEach(function (r, i) {
+    if (!i || cleanText(r[0]) !== cc) return;
+    var d = _newsYmd(r[9]), q = Number(r[6]) || 0;
+    if (d >= from) { st.sold += q; st.soldAmt += Number(r[7]) || 0; by[String(r[4])] = (by[String(r[4])] || 0) + q; }
+    else if (d >= before) st.soldBefore += q;
+  });
+  st.top = Object.keys(by).map(function (n) { return { name: n, qty: by[n] }; }).sort(function (a, b) { return b.qty - a.qty; }).slice(0, 3);
+  var prices = [], out = 0;
+  getOrCreateWholesaleItemsSheet(ss).getDataRange().getValues().forEach(function (r, i) {
+    if (!i || cleanText(r[0]) !== cc) return;
+    prices.push(Number(r[3]) || 0); if ((Number(r[4]) || 0) <= 0) out++;
+  });
+  st.items = prices.length; st.soldOut = out;
+  st.avgPrice = prices.length ? Math.round(prices.reduce(function (a, b) { return a + b; }, 0) / prices.length) : 0;
+
+  st.estates = 0;
+  getOrCreateRealEstateSheet(ss).getDataRange().getValues().forEach(function (r, i) { if (i && cleanText(r[0]) === cc) st.estates++; });
+
+  var weekAgo = Date.now() - 7 * 86400000, pcts = [];
+  st.stocks = _stockLoad(cc).stocks.map(function (s) {
+    var h = s.history || [s.price], t = _stockTimesOf(s), k = h.length - 1;
+    while (k > 0 && t[k] && t[k] > weekAgo) k--;        // 7일 전 가격
+    var pct = h[k] ? Math.round((s.price - h[k]) / h[k] * 1000) / 10 : 0;
+    pcts.push(pct);
+    return { name: s.name, emoji: s.emoji, price: s.price, pct: pct };
+  });
+  st.stockPct = pcts.length ? Math.round(pcts.reduce(function (a, b) { return a + b; }, 0) / pcts.length * 10) / 10 : 0;
+  return st;
+}
+
+function _newsClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, Math.round(v))); }
+function _newsPick(list, avoid) {
+  var l = list.filter(function (x) { return x !== avoid; });
+  if (!l.length) l = list;
+  return l[Math.floor(Math.random() * l.length)];
+}
+function _newsFill(text, map) { return text.replace(/\{(\w+)\}/g, function (m, k) { return map[k] !== undefined ? map[k] : m; }); }
+
+// 상태 → 점수 (-2 아주 적음 ~ +2 아주 많음)
+function _newsScores(st, prev) {
+  var z = { M: 0, B: 0, S: 0, I: 0 };
+  if (!st.total) return z;
+  var cash = st.card / st.total, bank = st.bank / st.total, inv = st.stock / st.total;
+  if (prev && prev.avg > 0) {
+    var g = (st.avg - prev.avg) / prev.avg * 100;
+    st.growth = Math.round(g * 10) / 10;
+    z.M += g >= 25 ? 2 : g >= 10 ? 1 : g <= -25 ? -2 : g <= -10 ? -1 : 0;
+  }
+  if (st.avgPrice) { var power = st.card / st.count / st.avgPrice; z.M += power >= 20 ? 1 : power <= 3 ? -1 : 0; }
+  if (st.rich / st.count >= 0.3) z.M += 1;
+  z.M += cash >= 0.7 ? 1 : cash <= 0.25 ? -1 : 0;
+  z.B = bank >= 0.5 ? 2 : bank >= 0.35 ? 1 : bank <= 0.05 ? -2 : bank <= 0.15 ? -1 : 0;
+  if (st.soldBefore > 0) {
+    var s = (st.sold - st.soldBefore) / st.soldBefore * 100;
+    z.S = s >= 80 ? 2 : s >= 30 ? 1 : s <= -80 ? -2 : s <= -30 ? -1 : 0;
+  } else if (st.items) { var per = st.sold / st.count; z.S = per >= 2 ? 2 : per >= 1 ? 1 : st.sold === 0 ? -2 : per < 0.3 ? -1 : 0; }
+  z.I = inv >= 0.4 ? 2 : inv >= 0.25 ? 1 : inv <= 0.03 ? -1 : 0;
+  z.M = _newsClamp(z.M, -2, 2);
+  return z;
+}
+
+var NEWS_CATS = {
+  money: { emoji: '💸', tag: '돈이 넘쳐요', titles: ['주머니 두둑! 우리 반에 돈이 넘친다', '돈이 많아진 교실, 물건값이 들썩들썩', '“사고 싶은 건 많은데…” 넘치는 돈, 커지는 물가 걱정'],
+    leads: ['요즘 우리 반 친구들의 손에 돈이 많아졌어요. 돈이 흔해지면 물건을 사려는 사람이 늘고, 물건값이 오르기 쉬워요.', '친구들이 가진 돈이 많아졌습니다. 같은 물건을 사려는 사람이 많아지면 값이 오를 수 있어요.'],
+    world: '실제 사회에서도 시중에 돈이 많이 풀리면 물건값이 전체적으로 오르는데, 이것을 “인플레이션”이라고 해요. 이럴 때 한국은행은 기준금리를 올려 사람들이 돈을 쓰기보다 저축하게 만듭니다.',
+    tips: ['꼭 필요한 물건과 갖고 싶은 물건을 나눠서 적어 봐요.', '값이 더 오르기 전이라고 서둘러 사지 말고, 정말 필요한지 하루만 더 생각해요.'] },
+  tight: { emoji: '🪙', tag: '돈이 귀해요', titles: ['지갑이 얇아졌다! 아껴 쓰기 나선 우리 반', '돈이 귀해진 교실, 알뜰 소비가 대세', '“한 번 더 생각하고 사자” 조용해진 교실 경제'],
+    leads: ['우리 반 친구들이 가진 돈이 줄었어요. 돈이 귀해지면 물건을 덜 사게 되고, 가게는 값을 내려서라도 팔고 싶어 해요.', '쓸 수 있는 돈이 넉넉하지 않은 한 주입니다. 모두가 지갑을 닫으면 가게도 어려워질 수 있어요.'],
+    world: '실제 사회에서 사람들이 돈을 쓰지 않아 물건이 안 팔리고 값이 내려가는 것을 “경기 침체”라고 해요. 이럴 때 한국은행은 기준금리를 내려서 돈이 다시 돌게 합니다.',
+    tips: ['일자리(직업)와 과제에 집중해서 수입을 늘려 봐요.', '이번 주에 꼭 써야 할 돈부터 순서를 정해요.'] },
+  saving: { emoji: '🏦', tag: '저축 열풍', titles: ['은행이 꽉 찼다! 저축 열풍 부는 우리 반', '너도나도 예금, 은행 금고가 빵빵', '“맡길 사람은 많은데…” 은행의 행복한 고민'],
+    leads: ['은행에 돈을 맡긴 친구들이 아주 많아졌어요. 맡기려는 돈이 넘치면 은행은 이자를 많이 주지 않아도 됩니다.', '예금이 크게 늘었습니다. 은행은 이미 돈이 충분해서 이자를 높게 줄 필요가 줄었어요.'],
+    world: '실제 사회에서도 은행에 돈이 많이 몰리면 예금 이자가 내려가요. 사람들이 저축만 하고 돈을 쓰지 않으면 가게와 회사가 어려워져서, 이자를 내려 소비와 투자를 돕기도 합니다.',
+    tips: ['이자가 내려갔다면 예금 기간을 어떻게 고를지 다시 계산해 봐요.', '저축, 소비, 투자를 골고루 나누는 것도 좋은 방법이에요.'] },
+  nosave: { emoji: '🐷', tag: '저축이 필요해요', titles: ['은행 금고가 텅텅! 예금 손님을 찾습니다', '저축을 잊은 교실, 은행이 나섰다', '“이자 더 드려요” 예금 손님 모시기 경쟁'],
+    leads: ['은행에 맡긴 돈이 아주 적어요. 은행은 손님을 모으려고 이자를 더 주겠다고 합니다.', '우리 반 돈이 대부분 은행 밖에 있습니다. 은행은 더 좋은 이자로 친구들을 부르고 있어요.'],
+    world: '실제 은행도 맡긴 돈이 부족하면 “특판 예금”처럼 이자를 높인 상품을 내놓아요. 은행은 그 돈을 필요한 사람과 회사에 빌려주기 때문에 예금이 꼭 필요합니다.',
+    tips: ['당장 쓰지 않을 돈은 예금하면 이자를 받을 수 있어요.', '만기까지 기다릴 수 있는 금액만 맡겨요. 중도 해지하면 신용점수가 내려가요.'] },
+  boom: { emoji: '🛒', tag: '매점이 북적북적', titles: ['매점에 줄이 길다! 소비 열기 후끈', '없어서 못 판다! 매점 대박 행진', '장바구니가 꽉꽉, 우리 반 소비 폭발'],
+    leads: ['이번 주 매점이 아주 바빴어요. 찾는 사람이 많은데 물건 수는 정해져 있으면 값이 오르게 됩니다.', '매점 물건이 빠르게 팔리고 있습니다. 인기가 많은 물건은 값이 오르기 쉬워요.'],
+    world: '실제 시장에서도 사려는 양(수요)이 팔려는 양(공급)보다 많으면 값이 올라요. 인기 장난감이나 명절 과일값이 오르는 것도 같은 까닭이에요.',
+    tips: ['사기 전에 매점 시세표에서 값을 견주어 봐요.', '친구들이 산다고 따라 사지 않아도 괜찮아요.'] },
+  slump: { emoji: '🍂', tag: '매점이 한산해요', titles: ['썰렁한 매점, 손님을 기다립니다', '“값을 내려야 하나…” 고민에 빠진 매점', '소비가 꽁꽁! 조용해진 매점 골목'],
+    leads: ['이번 주에는 매점을 찾는 친구가 줄었어요. 물건이 안 팔리면 가게는 값을 내려 손님을 부르려고 합니다.', '매점 판매가 눈에 띄게 줄었습니다. 돈이 돌지 않으면 물건을 파는 친구들의 수입도 줄어요.'],
+    world: '실제 가게도 손님이 줄면 할인 행사를 해요. 나라에서는 소비 쿠폰을 나눠 주거나 금리를 내려서 사람들이 다시 돈을 쓰도록 돕기도 합니다.',
+    tips: ['필요했던 물건이 있다면 값이 내린 지금이 좋은 기회예요.', '도매상인이라면 친구들이 좋아할 새 상품을 찾아봐요.'] },
+  invest: { emoji: '📈', tag: '투자 열풍', titles: ['너도나도 주식! 투자 열풍 부는 교실', '증권회사에 몰린 돈, 괜찮을까?', '“오를까 내릴까” 온 교실이 주식 이야기'],
+    leads: ['우리 반 돈이 주식으로 많이 몰렸어요. 투자는 이익을 볼 수도 있지만 손해를 볼 수도 있습니다.', '주식에 들어간 돈이 크게 늘었습니다. 한쪽으로 돈이 몰리면 값이 실제 가치보다 부풀 수 있어요.'],
+    world: '실제 사회에서도 투자에 돈이 너무 몰려 값이 부풀어 오르는 것을 “거품(버블)”이라고 해요. 그래서 전문가들은 한 곳에 모두 넣지 말고 나눠서 투자하라고 말합니다.',
+    tips: ['한 종목에 모두 넣지 말고 나눠서 투자해요.', '잃어도 괜찮은 만큼만 투자하고 나머지는 예금해요.'] },
+  stable: { emoji: '⚖️', tag: '안정된 한 주', titles: ['고르게 돌아가는 우리 반 경제', '저축도 소비도 알맞게! 균형 잡힌 한 주', '큰 바람 없이 잔잔한 교실 경제'],
+    leads: ['이번 주 우리 반 경제는 크게 치우치지 않았어요. 돈이 저축과 소비, 투자로 알맞게 나뉘어 있습니다.', '큰 변화 없이 안정된 한 주입니다. 이런 때일수록 다음 목표를 세우기 좋아요.'],
+    world: '실제 사회에서도 물가가 천천히, 조금씩 움직이는 것이 가장 건강한 경제예요. 한국은행은 물가가 1년에 2% 정도 오르는 것을 목표로 삼고 있습니다.',
+    tips: ['한 달 뒤에 하고 싶은 일을 정하고 저축 계획을 세워요.', '수입과 지출을 적어 보고 줄일 수 있는 곳을 찾아봐요.'] }
+};
+// 실제 사회의 계절 소식 (1월~12월): 매점 물가에 아주 조금 반영
+var NEWS_SEASONS = [
+  ['새해가 되면 세뱃돈과 새 다짐으로 저축하는 사람이 늘어요.', 0], ['졸업과 설 무렵에는 꽃과 선물을 찾는 사람이 많아져요.', 2], ['새 학기가 시작되면 학용품을 사는 사람이 늘어 값이 오르기 쉬워요.', 2],
+  ['봄나들이 철에는 간식과 도시락 재료가 잘 팔려요.', 1], ['가정의 달 5월에는 선물을 사는 사람이 많아요.', 2], ['초여름에는 햇과일과 채소가 많이 나와 값이 안정돼요.', -1],
+  ['여름 휴가철에는 얼음과 아이스크림, 숙박 값이 올라요.', 2], ['무더위에는 전기를 많이 써서 생활비가 늘어요.', 1], ['추석 무렵에는 과일과 선물 값이 올라요.', 2],
+  ['가을걷이 철에는 쌀과 과일이 많이 나와 값이 내려가요.', -2], ['김장철에는 배추와 무를 찾는 집이 늘어 채솟값이 움직여요.', 1], ['연말에는 선물과 모임으로 소비가 늘어요.', 2]
+];
+var NEWS_WHY = {
+  rate: { 'M+': '친구들 손에 돈이 많아서, 저축하도록 이자를 올려요.', 'M-': '돈이 잘 돌지 않아서, 쓰고 투자하도록 이자를 내려요.', 'B-': '은행에 돈이 너무 많이 모여서 이자를 내려요.', 'B+': '은행에 맡긴 돈이 적어서, 손님을 모으려고 이자를 올려요.',
+    'S+': '소비가 너무 뜨거워서, 식히려고 이자를 올려요.', 'S-': '매점이 한산해서, 돈을 쓰도록 이자를 내려요.', 'I+': '투자로 돈이 몰려서, 은행도 손님을 붙잡으려고 이자를 올려요.', 'I-': '투자가 조용해서 은행도 이자를 조금 내려요.' },
+  price: { 'M+': '쓸 돈이 많아져서 물건값이 올라요.', 'M-': '쓸 돈이 줄어서 물건값을 내려요.', 'B-': '돈이 은행에 묶여 있어서 물건값이 내려가요.', 'B+': '저축보다 소비에 돈이 몰려 물건값이 올라요.',
+    'S+': '찾는 사람이 많아서 물건값이 올라요.', 'S-': '물건이 잘 안 팔려서 값을 내려요.', 'N+': '계절 영향으로 물건값이 조금 올라요.', 'N-': '계절 영향으로 물건값이 조금 내려요.' },
+  estate: { 'M+': '돈이 많아지면서 자리를 사려는 친구가 늘어요.', 'M-': '돈이 귀해져서 자리를 사려는 친구가 줄어요.', 'I+': '투자 열기가 부동산까지 번졌어요.', 'I-': '투자가 조용해서 자리 값도 내려가요.', 'R-': '이자가 올라서 자리보다 예금을 고르는 친구가 늘어요.', 'R+': '이자가 내려서 예금 대신 자리를 사려는 친구가 늘어요.' }
+};
+function _newsSum(kind, parts, lo, hi) {                // 영향들을 더하고, 가장 큰 이유 한 가지를 고름
+  var sum = 0; Object.keys(parts).forEach(function (k) { sum += parts[k]; });
+  var v = _newsClamp(sum, lo, hi), best = '', size = 0;
+  Object.keys(parts).forEach(function (k) {
+    if (v !== 0 && parts[k] * v > 0 && Math.abs(parts[k]) > size && NEWS_WHY[kind][k + (v > 0 ? '+' : '-')]) { size = Math.abs(parts[k]); best = NEWS_WHY[kind][k + (v > 0 ? '+' : '-')]; }
+  });
+  return { v: v, why: v === 0 ? '큰 변화가 없어서 원래대로 둬요.' : (best || '시장 분위기에 따라 조금 움직여요.') };
+}
+
+function _newsBuild(classCode, state) {
+  var st = _newsStats(classCode), week = _newsWeek();
+  var prev = null;
+  (state.snaps || []).forEach(function (s) { if (s.week < week) prev = s; });
+  var z = _newsScores(st, prev);
+  var season = NEWS_SEASONS[Number(week.slice(5, 7)) - 1], live = st.total > 0;
+  // 영향 계산: 돈이 많으면 이자↑ 물가↑, 예금이 너무 많으면 이자↓, 이자가 오르면 집값↓
+  var rate = _newsSum('rate', { M: 10 * z.M, B: -12 * z.B, S: 4 * z.S, I: 3 * z.I, X: live ? Math.random() * 4 - 2 : 0 }, -40, 40);
+  var price = _newsSum('price', { M: 8 * z.M, B: -3 * z.B, S: 6 * z.S, N: live ? season[1] : 0, X: live ? Math.random() * 2 - 1 : 0 }, -25, 30);
+  var estate = _newsSum('estate', { M: 5 * z.M, I: 4 * z.I, R: -0.25 * rate.v }, -20, 20);
+  var rent = _newsClamp(price.v * 0.6, -15, 15);
+
+  var weight = [['money', z.M * 1.1], ['tight', -z.M], ['saving', z.B * 1.2], ['nosave', -z.B * 0.9], ['boom', z.S], ['slump', -z.S * 0.95], ['invest', z.I * 1.15]]
+    .sort(function (a, b) { return b[1] - a[1]; })[0];
+  var key = weight[1] >= 0.9 ? weight[0] : 'stable', cat = NEWS_CATS[key];
+  var last = state.draft && state.draft.title;
+  var won = function (n) { return Math.round(n).toLocaleString() + ' 머니'; };
+  var ratio = function (n) { return st.total ? Math.round(n / st.total * 100) : 0; };
+  var word = function (n, names) { return names[n + 2]; };
+
+  var signals = [
+    { key: 'M', icon: '💰', name: '학급 총 자산', value: won(st.total), sub: '한 사람 평균 ' + won(st.avg) + (st.growth !== undefined ? ' · 지난번보다 ' + (st.growth > 0 ? '+' : '') + st.growth + '%' : ''), score: z.M, word: word(z.M, ['돈이 아주 귀함', '돈이 귀함', '알맞음', '돈이 많음', '돈이 아주 많음']) },
+    { key: 'B', icon: '🏦', name: '은행 예금', value: won(st.bank), sub: '전체의 ' + ratio(st.bank) + '% · 최근 7일 새 예금 ' + st.newDep + '건', score: z.B, word: word(z.B, ['아주 적음', '적음', '알맞음', '많음', '너무 많음']) },
+    { key: 'S', icon: '🛒', name: '매점 구매', value: st.sold + '개', sub: '최근 7일 ' + won(st.soldAmt) + ' · 그 전 7일 ' + st.soldBefore + '개', score: z.S, word: word(z.S, ['꽁꽁 얼었음', '한산함', '알맞음', '북적임', '아주 뜨거움']) },
+    { key: 'I', icon: '📈', name: '투자(주식)', value: won(st.stock), sub: '전체의 ' + ratio(st.stock) + '% · 평균 주가 ' + (st.stockPct > 0 ? '+' : '') + st.stockPct + '%', score: z.I, word: word(z.I, ['아주 조용함', '조용함', '알맞음', '활발함', '열풍']) }
+  ];
+  var top = st.top.length ? '가장 인기 있는 물건은 ' + st.top[0].name + '(' + st.top[0].qty + '개)였어요.' : '';
+  var best = st.stocks.slice().sort(function (a, b) { return b.pct - a.pct; })[0];
+  var articles = [
+    { icon: '💰', title: '우리 반 살림', text: '친구 ' + st.count + '명이 가진 돈은 모두 ' + won(st.total) + '예요. 한 사람 평균은 ' + won(st.avg) + (st.growth === undefined ? '입니다.' : '로, 지난번보다 ' + (st.growth > 0 ? st.growth + '% 늘었어요.' : st.growth < 0 ? Math.abs(st.growth) + '% 줄었어요.' : '그대로예요.')) },
+    { icon: '🏦', title: '은행 소식', text: '은행에는 ' + won(st.bank) + '가 들어 있어요(전체의 ' + ratio(st.bank) + '%). 최근 7일 동안 새 예금 ' + st.newDep + '건, 중도 해지 ' + st.early + '건이 있었어요.' },
+    { icon: '🛒', title: '매점 소식', text: st.items ? '최근 7일 동안 물건 ' + st.sold + '개가 팔렸어요. ' + top + (st.soldOut ? ' 다 팔린 물건도 ' + st.soldOut + '가지 있어요.' : '') : '아직 매점에 등록된 물건이 없어요.' },
+    { icon: '📈', title: '증권 소식', text: '친구들이 가진 주식은 ' + won(st.stock) + '어치예요. ' + (best && best.pct !== 0 ? '최근 7일 동안 ' + best.emoji + ' ' + best.name + ' 주가가 ' + (best.pct > 0 ? best.pct + '% 올랐어요.' : Math.abs(best.pct) + '% 내렸어요.') : '최근 7일 동안 주가는 크게 움직이지 않았어요.') }
+  ];
+  var b = getBankSettings(classCode);
+  if (!b.success) throw new Error(b.msg);
+  return {
+    id: 'NW_' + Date.now() + '_' + Math.floor(Math.random() * 1000), week: week, createdAt: Date.now(), issue: state.issue || 1,
+    category: key, emoji: cat.emoji, tag: cat.tag, title: _newsPick(cat.titles, last), lead: _newsPick(cat.leads),
+    articles: articles, world: cat.world, season: season[0], tips: cat.tips, signals: signals,
+    effects: { rate: rate.v, price: price.v, rent: rent, estate: estate.v },
+    why: { rate: rate.why, price: price.why, rent: rent === 0 ? '큰 변화가 없어서 원래대로 둬요.' : '물가를 따라 자리 임대료도 함께 ' + (rent > 0 ? '올라요.' : '내려요.'), estate: estate.why },
+    baseRates: b.base, share: { card: ratio(st.card), bank: ratio(st.bank), stock: st.total ? 100 - ratio(st.card) - ratio(st.bank) : 0 },
+    top: st.top, stocks: st.stocks, estates: st.estates, snap: { week: week, avg: st.avg, total: st.total }
+  };
+}
+function _newsMakeDraft(classCode, state) {
+  var week = _newsWeek();
+  if (!state.draft || state.draft.week !== week) state.issue = (state.issue || 0) + 1;
+  var d = _newsBuild(classCode, state);
+  state.draft = d;
+  state.snaps = (state.snaps || []).filter(function (s) { return s.week !== week; }).concat([d.snap]).slice(-12);
+  _newsSave(classCode, state);
+}
+function _newsView(classCode, state, msg) {
+  var cc = cleanText(classCode), name = '';
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Classes');
+  if (sheet) sheet.getDataRange().getValues().forEach(function (r, i) { if (i && cleanText(r[1]) === cc) name = String(r[0] || ''); });
+  return { success: true, msg: msg || '', className: name, draft: state.draft, active: state.active, history: state.history || [] };
+}
+
+// 학생 화면용 — 발효 중인 속보만 돌려줌 (적용 전 뉴스는 보여 주지 않음)
+function getActiveNews(classCode) {
+  try {
+    var v = _newsView(classCode, _newsLoad(classCode));
+    return { success: true, className: v.className, active: v.active };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+// 뉴스룸 열기 — 이번 주 뉴스가 아직 없으면 자동으로 만듦
+function getNewsroom(classCode) {
+  try {
+    var state = _newsLoad(classCode);
+    if (!state.draft || state.draft.week !== _newsWeek()) _newsMakeDraft(classCode, state);
+    return _newsView(classCode, state);
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+function generateNews(classCode) {
+  try {
+    var state = _newsLoad(classCode);
+    _newsMakeDraft(classCode, state);
+    return _newsView(classCode, state, 'AI가 지금 학급 상태로 새 뉴스를 만들었어요.');
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+function applyNews(classCode, newsId) {
+  try {
+    var state = _newsLoad(classCode);
+    if (!state.draft || state.draft.id !== newsId) return { success: false, msg: '그사이 뉴스가 새로 만들어졌어요. 화면을 다시 열어 확인해 주세요.' };
+    var b = getBankSettings(classCode);
+    if (!b.success) return b;
+    state.draft.baseRates = b.base;
+    state.draft.appliedAt = Date.now();
+    state.active = state.draft;
+    state.history = [state.draft].concat((state.history || []).filter(function (h) { return h.id !== newsId; })).slice(0, 10);
+    _newsSave(classCode, state);
+    return _newsView(classCode, state, '속보가 발효됐어요! 예금 이자율과 물가가 바뀌었습니다.');
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+function resetNews(classCode) {
+  try {
+    var state = _newsLoad(classCode);
+    if (!state.active) return { success: false, msg: '지금 발효 중인 속보가 없어요.' };
+    state.active = null;
+    _newsSave(classCode, state);
+    return _newsView(classCode, state, '속보를 해제했어요. 이자율과 물가가 원래대로 돌아왔습니다.');
   } catch (e) { return { success: false, msg: e.message }; }
 }

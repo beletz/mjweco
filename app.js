@@ -239,6 +239,7 @@ function mdTab(panelId, tabEl){
   if(panelId==='md-fulllog'){ loadFullLog(); }
   if(panelId==='md-stock-admin'){ if(typeof loadStockAdmin==='function') loadStockAdmin(); }
   if(panelId==='md-police'){ loadPoliceAdmin(); }
+  if(panelId==='md-newsroom'){ if(typeof loadNewsroom==='function') loadNewsroom(); }
 
   refreshMasterPendingBadges(); // ★ 탭 전환마다 결재 대기 배지 갱신
 }
@@ -448,15 +449,25 @@ function doIndPay(){
 // ============================================================
 // 은행 이자율 관리
 // ============================================================
+// 뉴스룸 속보가 발효 중이면 붙는 안내 (예: 📰 속보 +20%)
+function newsMark(pct){
+  return pct ? ' <span class="nw-mark">📰 속보 '+(pct>0?'+':'')+pct+'%</span>' : '';
+}
+
 function loadBankSettings(){
   var targetCC=_adminCC||_cc;
   if(!targetCC)return;
   google.script.run.withSuccessHandler(function(r){
     if(r.success){
-      if($('rate1'))$('rate1').value=r.r1;
-      if($('rate2'))$('rate2').value=r.r2;
-      if($('rate3'))$('rate3').value=r.r3;
-      if($('rate4'))$('rate4').value=r.r4;
+      // 설정 칸에는 원래 이자율을 보여 줌 (속보 이자율을 저장해 버리지 않게)
+      if($('rate1'))$('rate1').value=r.base.r1;
+      if($('rate2'))$('rate2').value=r.base.r2;
+      if($('rate3'))$('rate3').value=r.base.r3;
+      if($('rate4'))$('rate4').value=r.base.r4;
+      if($('rate-news-note')){
+        $('rate-news-note').style.display=r.newsPct?'block':'none';
+        $('rate-news-note').innerHTML='📰 <b>뉴스룸 속보가 발효 중</b>이에요('+(r.newsPct>0?'+':'')+r.newsPct+'%). 지금 실제 이자율: 1주 '+r.r1+'% · 2주 '+r.r2+'% · 3주 '+r.r3+'% · 4주 '+r.r4+'%. 아래 칸은 원래 이자율이에요.';
+      }
       if($('rate-prime'))$('rate-prime').value=r.prime;
     }
   }).getBankSettings(targetCC);
@@ -1150,6 +1161,7 @@ function renderStudentTiles(){
   });
   grid.innerHTML=html;
   if(typeof refreshDashAvatar==='function') refreshDashAvatar();
+  if(typeof refreshNewsBanner==='function') refreshNewsBanner(); // 발효 중인 경제 뉴스 속보 (newsroom.js)
 }
 
 function openStudentPanel(viewId){
@@ -1297,7 +1309,7 @@ function doExpense(){
 function loadBankRatesInfo(){
   google.script.run.withSuccessHandler(function(r){
     if(r.success){
-      $('bank-rates-info').innerHTML='📊 현재 이자율: 1주 <b style="color:var(--green)">'+r.r1+'%</b> | 2주 <b style="color:var(--green)">'+r.r2+'%</b> | 3주 <b style="color:var(--green)">'+r.r3+'%</b> | 4주 <b style="color:var(--green)">'+r.r4+'%</b>';
+      $('bank-rates-info').innerHTML='📊 현재 이자율: 1주 <b style="color:var(--green)">'+r.r1+'%</b> | 2주 <b style="color:var(--green)">'+r.r2+'%</b> | 3주 <b style="color:var(--green)">'+r.r3+'%</b> | 4주 <b style="color:var(--green)">'+r.r4+'%</b>'+newsMark(r.newsPct);
     }
   }).getBankSettings(_cc);
 }
@@ -1392,7 +1404,7 @@ function initBankDashboard(){
       primeInterestRate=r.prime;
       var info=$('banker-rates-info');
       if(info){
-        info.innerHTML='📊 <b>현재 이자율:</b> 1주 <span style="color:var(--green)">'+r.r1+'%</span> | 2주 <span style="color:var(--green)">'+r.r2+'%</span> | 3주 <span style="color:var(--green)">'+r.r3+'%</span> | 4주 <span style="color:var(--green)">'+r.r4+'%</span><br>👑 <b>우대 금리:</b> 기본 이자율 + <span style="color:var(--orange)">'+r.prime+'%</span>';
+        info.innerHTML='📊 <b>현재 이자율:</b> 1주 <span style="color:var(--green)">'+r.r1+'%</span> | 2주 <span style="color:var(--green)">'+r.r2+'%</span> | 3주 <span style="color:var(--green)">'+r.r3+'%</span> | 4주 <span style="color:var(--green)">'+r.r4+'%</span>'+newsMark(r.newsPct)+'<br>👑 <b>우대 금리:</b> 기본 이자율 + <span style="color:var(--orange)">'+r.prime+'%</span>';
       }
        loadAndShowCreditInBanker(currentCode);
     }
@@ -1428,7 +1440,7 @@ function calculatePreview(){
   if(amount>0){
     previewBox.style.display='block';
     var baseRate=depositInterestRates[period]||0;
-    var finalRate=isPrime?(baseRate+primeInterestRate):baseRate;
+    var finalRate=isPrime?Math.round((baseRate+primeInterestRate)*100)/100:baseRate;
     var interest=Math.floor(amount*(finalRate/100));
     var total=amount+interest;
     var rateText=finalRate+'% (기본 '+baseRate+'%';
@@ -1454,7 +1466,7 @@ async function saveNewDeposit(){
   if(!amount || !startDate) return alert('금액과 날짜를 정확히 입력해주세요.');
 
   var baseRate  = depositInterestRates[period] || 0;
-  var finalRate = isPrime ? (baseRate + primeInterestRate) : baseRate;
+  var finalRate = isPrime ? Math.round((baseRate + primeInterestRate)*100)/100 : baseRate;
   var targetCC  = _cc || _adminCC;
 
   // 이 기간 신용점수 미리 확인
@@ -2173,8 +2185,8 @@ function loadRealEstate(){
     r.list.forEach(function(re){
       var canBuy=(re.status==='매물');
       h+='<tr><td>'+esc(re.assetNo)+'</td><td><strong>'+esc(re.name)+'</strong></td><td>'+esc(re.type)+'</td>'+
-        '<td>'+esc(re.ownerName||'국가')+'</td><td><strong>'+Number(re.price).toLocaleString()+'</strong></td>'+
-        '<td>'+Number(re.rent).toLocaleString()+'</td>'+
+        '<td>'+esc(re.ownerName||'국가')+'</td><td><strong>'+Number(re.price).toLocaleString()+'</strong>'+(re.price!==re.basePrice?' <span class="nw-mark">📰 원래 '+re.basePrice.toLocaleString()+'</span>':'')+'</td>'+
+        '<td>'+Number(re.rent).toLocaleString()+(re.rent!==re.baseRent?' <span class="nw-mark">📰 원래 '+re.baseRent.toLocaleString()+'</span>':'')+'</td>'+
         '<td><span style="color:'+(re.status==='매물'?'var(--green)':'var(--gray)')+';font-weight:600;">'+esc(re.status)+'</span></td>'+
         '<td>'+(canBuy&&_myJob!=='부동산 중개인'?'<button class="btn btn-sm btn-green" onclick="doBuyRE(\''+re.assetNo+'\')"><i class="fa-solid fa-cart-shopping"></i> 구매</button>':'<span style="font-size:12px;color:var(--gray);">'+(re.status==='소유'?'소유됨':'중개인')+'</span>')+'</td></tr>';
     });
@@ -4344,7 +4356,7 @@ function renderWsItemsList(){
   _wsItemsData.forEach(function(item,idx){
     h+='<tr>';
     h+='<td style="font-weight:700;color:#1E293B;">'+esc(item.name)+'</td>';
-    h+='<td style="color:#7C3AED;font-weight:700;">'+Number(item.price).toLocaleString()+' 머니</td>';
+    h+='<td style="color:#7C3AED;font-weight:700;">'+Number(item.price).toLocaleString()+' 머니'+(item.price!==item.basePrice?' <span class="nw-mark">📰 정가 '+item.basePrice.toLocaleString()+'</span>':'')+'</td>';
     h+='<td><input type="number" id="ws-stock-edit-'+idx+'" value="'+item.stock+'" min="0" style="width:70px;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;text-align:center;"></td>';
     h+='<td style="color:var(--green);font-weight:600;">'+item.sold+'개</td>';
     h+='<td style="display:flex;gap:4px;">';
@@ -4582,8 +4594,8 @@ async function doWsSale(){
         if($('ws-total-label'))     $('ws-total-label').textContent='- 머니';
         if($('ws-infl-note'))       $('ws-infl-note').style.display='none';
         loadWsSales();
-        loadWsItems();
       }
+      loadWsItems(); // 실패해도 새 가격을 다시 받음 (속보로 물가가 바뀌었을 수 있음)
     })
     .withFailureHandler(function(err){ hideLoading(); alert('서버 오류: '+err.message); })
     .recordWholesaleSale(targetCC, targetSno, buyerNo, itemName, unitPrice, qty);

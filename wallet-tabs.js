@@ -340,6 +340,7 @@
       if (!r || !r.success) { box.innerHTML = fail(r && r.msg); return; }
       if (!r.list.length) { box.innerHTML = empty('🏪', '아직 매점에 등록된 상품이 없어요.<br>도매상인이 상품을 등록하면 여기에 보여요.'); return; }
       var h = '';
+      if (r.newsPct) h += '<div class="wt-alert ' + (r.newsPct > 0 ? 'red' : 'green') + '">📰 <b>경제 뉴스 속보!</b> 매점 물가가 ' + (r.newsPct > 0 ? r.newsPct + '% 올랐어요.' : Math.abs(r.newsPct) + '% 내렸어요.') + ' 아래 값에 이미 들어 있어요.</div>';
       if (target()) {
         h += r.inflated
           ? '<div class="wt-alert red">📈 <b>인플레이션 적용 중!</b> 지금 카드 잔액이 ' + won(r.card) + '라서 (' + won(r.line) + ' 이상) 물건을 <b>정가의 ' + r.rate + '배</b>로 사요.</div>'

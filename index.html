@@ -210,6 +210,7 @@
       <div class="mh-tab" onclick="mdTab('md-treasury-approval',this)">🏛️ 국고 승인<span id="mh-badge-treasury" class="mh-badge" style="display:none;">0</span></div>
       <div class="mh-tab" onclick="mdTab('md-police',this)">🚓 경찰서<span id="mh-badge-police" class="mh-badge" style="display:none;">0</span></div>
       <div class="mh-tab" onclick="mdTab('md-stock-admin',this)">📈 증권회사</div>
+      <div class="mh-tab" onclick="mdTab('md-newsroom',this)">📰 뉴스룸</div>
       <div class="mh-tab" onclick="mdTab('md-fulllog',this)">📋 전체 로그</div>
     </div>
   </div>
@@ -261,6 +262,10 @@
         <div class="tile-dot"></div><div class="tile-icon" style="background:var(--red);"><i class="fa-solid fa-arrow-trend-up"></i></div>
         <h3>증권회사</h3><p>주식 가격 돌리기·종목 설정</p>
       </div>
+      <div class="dash-tile" onclick="mdTab('md-newsroom',document.querySelector('.mh-tab[onclick*=&quot;md-newsroom&quot;]'))">
+        <div class="tile-dot"></div><div class="tile-icon" style="background:var(--cyan);"><i class="fa-solid fa-newspaper"></i></div>
+        <h3>경제 뉴스룸</h3><p>매주 AI 뉴스·속보 적용·포스터 인쇄</p>
+      </div>
       <div class="dash-tile" onclick="mdTab('md-fulllog',document.querySelector('.mh-tab[onclick*=&quot;md-fulllog&quot;]'))">
         <div class="tile-dot"></div><div class="tile-icon" style="background:var(--slate);"><i class="fa-solid fa-clipboard-list"></i></div>
         <h3>전체 로그</h3><p>학급 전체 거래 기록</p>
@@ -269,6 +274,20 @@
   </div>
   
 </div>
+
+  <!-- 경제 뉴스룸 (newsroom.js) -->
+  <div class="md-panel" id="md-newsroom">
+    <div class="sc nw-head">
+      <div>
+        <div class="st" style="margin-bottom:6px;">📰 학급 경제 뉴스룸</div>
+        <div class="nw-sub">우리 반의 돈·예금·매점·투자를 보고 <b>매주 새 뉴스</b>가 자동으로 만들어져요(월요일부터 새로운 주). <b>적용하기</b>를 누르기 전에는 아무것도 바뀌지 않아요.</div>
+      </div>
+      <button class="btn btn-sm btn-blue" onclick="newsGenerate()"><i class="fa-solid fa-rotate"></i> 지금 상태로 다시 만들기</button>
+    </div>
+    <div id="nw-active"></div>
+    <div id="nw-draft"><div class="empty-msg">불러오는 중...</div></div>
+    <div id="nw-history"></div>
+  </div>
 
   <!-- CITIZENS PANEL -->
   <div class="md-panel" id="md-citizens">
@@ -507,6 +526,7 @@
     <div class="sc">
       <div class="st"><i class="fa-solid fa-sliders" style="color:var(--blue);"></i> 예금 이자율 설정</div>
       <div class="info-box">💡 각 기간별 이자율을 설정하세요. 학생이 예금을 가입할 때 적용됩니다. (예: 5 입력 = 5%)</div>
+      <div class="info-box" id="rate-news-note" style="display:none;"></div>
       <div class="rate-grid" id="rate-grid">
         <div class="rate-card"><div class="rate-week">1주 예금</div><input class="rate-input" id="rate1" type="number" value="3" min="0" max="100"><div class="rate-pct">% 이자율</div></div>
         <div class="rate-card"><div class="rate-week">2주 예금</div><input class="rate-input" id="rate2" type="number" value="5" min="0" max="100"><div class="rate-pct">% 이자율</div></div>
@@ -991,6 +1011,7 @@
     </div>
   </div>
   <div style="padding:32px 5%;">
+    <div id="news-banner"></div>
     <div class="tile-grid" id="student-tile-grid"></div>
   </div>
 </div>
@@ -1937,6 +1958,7 @@
 <script src="result-popup.js"></script>
 <script src="stock-market.js"></script>
 <script src="wallet-tabs.js"></script>
+<script src="newsroom.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
 <script src="ui-motion.js"></script>
 <script src="ui-colors.js"></script>
