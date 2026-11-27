@@ -26,7 +26,7 @@
     submitCreditReport: '신용 보고', approvePendingCredit: '신용 승인', rejectPendingCredit: '신용 반려',
     // 도매상
     recordWholesaleSale: '판매', addWholesaleItemBackend: '상품 등록', deleteWholesaleItem: '상품 삭제',
-    deleteWholesaleSale: '판매 기록 삭제', editWholesaleSaleMemo: '메모 수정', payWholesaleCorpTax: '법인세 납부', payFineTreasury: '벌금 환수금 납부', donateToTreasury: '국고 기부', buyCreditCoupon: '신용 구제 쿠폰', setCouponConfig: '쿠폰 설정 저장', setDonationLimit: '기부 한도 저장',
+    deleteWholesaleSale: '판매 기록 삭제', editWholesaleSaleMemo: '메모 수정', payWholesaleCorpTax: '법인세 납부', payFineTreasury: '벌금 환수금 납부', donateToTreasury: '국고 기부', setCouponConfig: '쿠폰 설정 저장', setDonationLimit: '기부 한도 저장',
     // 부동산·증권·아바타
     buyRealEstate: '부동산 구매', addRealEstate: '부동산 등록', editRealEstate: '매물 수정', settleRent: '이번 주 월세 정산', processOverdueNow: '연체 처리', setDebtPlan: '분할 상환', setLeaseConfig: '임대 설정 저장', randomSeats: '랜덤 자리 배치', setPublicLease: '공공임대', setSeatPerks: '자리 혜택 저장', setTeacherDesk: '교사배정 자리', saveSeatLayout: '자리 배치 저장', setSeatPerk: '자리 혜택 저장', buyLottery: '구매', tradeStock: '주식 거래', runStockStep: '가격 돌리기', setStockAuto: '자동으로 돌리기 설정', setStockSettings: '종목 설정 저장', addStockRequest: '신청',
     resetStockMarket: '증권회사 초기화', buyAvatarItem: '아이템 구매', saveAvatar: '아바타 저장', setAvatarPrices: '가격 저장',

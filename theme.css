@@ -1350,3 +1350,4 @@ body:has(#view-master-dashboard.active) ::-webkit-scrollbar-thumb{ border-color:
 .cp-btn:disabled{opacity:.45;cursor:not-allowed}
 .cp-badge{display:inline-block;margin-top:4px;font-size:12px;font-weight:700;background:#D1FAE5;color:#065F46;border-radius:999px;padding:2px 9px}
 .cp-left{font-size:13px;background:#FEF3C7;color:#92400E;border-radius:999px;padding:2px 9px;white-space:nowrap}
+.ws-coupon-row td{background:#FFF7ED}

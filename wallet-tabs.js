@@ -336,7 +336,7 @@
   // ======================================================================
   // 🏪 매점 시세표
   // ======================================================================
-  // ── 🎟️ 신용 구제 쿠폰 (매점 상품) — 서버 getCouponInfo · buyCreditCoupon ──
+  // ── 🎟️ 신용 구제 쿠폰 (매점 상품, 도매상인이 팔아요) — 서버 getCouponInfo ──
   //  쿠폰 사용 여부는 본인(과 선생님)만 봄: 내 정보만 받아 옴
   var coupon = null;
   function couponBadge(r) {
@@ -360,26 +360,12 @@
         (a ? '<div class="cp-d">내 쿠폰: 신용 점수가 <b>오를 때마다 ' + a.mult + '배</b>로 받고 있어요. (예: 과제 +2점 → +' + (2 * a.mult) + '점) 깎이는 점수는 그대로예요. ' + E(a.boughtAt) + '에 샀어요.</div>'
            : '<div class="cp-d">산 때부터 <b>' + c.days + '일 동안</b> 신용 점수가 <b>오를 때마다 ' + c.mult + '배</b>로 받아요. (예: 과제 +2점 → +' + (2 * c.mult) + '점) 깎이는 점수는 그대로예요.</div>');
       if (a) h += '<div class="cp-st on">✨ 점수 ' + a.mult + '배 적용 중! · <b>' + a.daysLeft + '일 남음</b> (' + E(a.expiresAt) + '까지)</div>';
-      else if (r.canBuy) h += '<div class="cp-st ok">지금 살 수 있어요. (신용 점수 ' + r.credit + '점 · ' + c.threshold + '점 미만만 구매 가능)</div>';
+      else if (r.canBuy) h += '<div class="cp-st ok">🛒 살 수 있어요! <b>도매상인</b>에게 "신용 구제 쿠폰"을 사고 싶다고 말해요. (신용 점수 ' + r.credit + '점 · ' + c.threshold + '점 미만만 구매 가능)</div>';
       else h += '<div class="cp-st no">🔒 ' + E(r.reason) + '</div>';
-      h += '</div>' + (a ? '' : '<button class="sb sb-green cp-btn" onclick="couponBuy()"' + (r.canBuy ? '' : ' disabled') + '>구매하기</button>') + '</div>';
+      h += '</div></div>';
       box.innerHTML = h;
     }).withFailureHandler(function () { box.innerHTML = ''; }).getCouponInfo(cc(), sno);
   }
-  window.couponBuy = async function () {
-    var r = coupon, sno = target();
-    if (!r || !r.canBuy) return alert((r && r.reason) || '지금은 살 수 없어요.');
-    if (!await uiConfirm('🎟️ 신용 구제 쿠폰을 ' + won(r.cfg.price) + '에 살까요?\n\n· ' + r.cfg.days + '일 동안 오르는 신용 점수를 ' + r.cfg.mult + '배로 받아요.\n· 깎이는 점수는 그대로예요.\n· 효과가 끝나기 전에는 다시 살 수 없어요.')) return;
-    if (typeof showLoading === 'function') showLoading();
-    google.script.run.withSuccessHandler(function (res) {
-      if (typeof hideLoading === 'function') hideLoading();
-      if (!res || !res.success) { alert((res && res.msg) || '사지 못했어요.'); return loadCoupon(); }
-      if ($('s-card')) { $('s-card').textContent = Number(res.newCard).toLocaleString() + ' 머니'; if (typeof walletRecalcTotal === 'function') walletRecalcTotal('s'); }
-      if (typeof loadTx === 'function') loadTx(cc(), sno, 's-tx-tbody', 's-tx-cnt');
-      loadCoupon();
-    }).withFailureHandler(function (e) { if (typeof hideLoading === 'function') hideLoading(); alert('오류: ' + e.message); }).buyCreditCoupon(cc(), sno);
-  };
-
   function loadStore() {
     $('wt-store-box').innerHTML = '<div id="wt-coupon"></div><div id="wt-store-list"></div>';
     loadCoupon();

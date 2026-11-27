@@ -4724,6 +4724,12 @@ function renderWsItemsList(){
   if(!_wsItemsData.length){ c.innerHTML='<div class="empty-msg">등록된 상품이 없습니다.</div>'; return; }
   var h='<div class="stw"><table class="stb"><thead><tr><th>상품명</th><th>가격</th><th>재고</th><th>판매수</th><th>관리</th></tr></thead><tbody>';
   _wsItemsData.forEach(function(item,idx){
+    if(item.coupon){   // 🎟️ 신용 구제 쿠폰: 선생님이 신용 관리에서 켜고 끔 (재고 무한)
+      h+='<tr class="ws-coupon-row"><td style="font-weight:700;color:#9A3412;">'+esc(item.name)+'<div style="font-size:12px;color:#B45309;font-weight:400;">'+esc(item.note||'')+'</div></td>';
+      h+='<td style="color:#7C3AED;font-weight:700;">'+Number(item.price).toLocaleString()+' 머니</td><td><b>♾️ 무한</b></td>';
+      h+='<td style="color:var(--green);font-weight:600;">'+item.sold+'개</td><td style="font-size:12px;color:var(--gray);">선생님이 신용 관리에서<br>켜고 꺼요</td></tr>';
+      return;
+    }
     h+='<tr>';
     h+='<td style="font-weight:700;color:#1E293B;">'+esc(item.name)+'</td>';
     h+='<td style="color:#7C3AED;font-weight:700;">'+Number(item.price).toLocaleString()+' 머니'+(item.price!==item.basePrice?' <span class="nw-mark">📰 정가 '+item.basePrice.toLocaleString()+'</span>':'')+'</td>';
@@ -4873,13 +4879,15 @@ function renderWsItemSelList(list){
   list.forEach(function(item){
     var sBg=item.stock>0?'#ECFDF5':'#FFF5F5';
     var sC =item.stock>0?'#059669':'#EF4444';
+    var sTxt=item.unlimited?'재고 ♾️ 무한':'재고 '+item.stock+'개';
     h+='<div onclick="selectWsItem(\''+esc(item.name)+'\','+item.price+','+item.stock+')" '+
       'style="padding:12px 14px;border:1.5px solid #E2E8F0;border-radius:11px;margin-bottom:7px;cursor:pointer;display:flex;align-items:center;gap:10px;" '+
       'onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'white\'">';
     h+='<div style="flex:1;">';
     h+='<div style="font-size:15px;font-weight:700;color:#1E293B;">'+esc(item.name)+'</div>';
-    h+='<div style="font-size:13px;color:#7C3AED;font-weight:700;margin-top:2px;">'+Number(item.price).toLocaleString()+' 머니</div></div>';
-    h+='<span style="background:'+sBg+';color:'+sC+';font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;">재고 '+item.stock+'개</span>';
+    h+='<div style="font-size:13px;color:#7C3AED;font-weight:700;margin-top:2px;">'+Number(item.price).toLocaleString()+' 머니</div>';
+    h+=(item.coupon?'<div style="font-size:12px;color:#B45309;margin-top:2px;">'+esc(item.note||'')+'</div>':'')+'</div>';
+    h+='<span style="background:'+sBg+';color:'+sC+';font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;">'+sTxt+'</span>';
     h+='</div>';
   });
   c.innerHTML=h||'<div class="empty-msg">상품 등록/재고 탭에서 먼저 상품을 등록하세요.</div>';
@@ -4896,6 +4904,7 @@ function selectWsItem(name, price, stock){
   if($('ws-sale-item-price')) $('ws-sale-item-price').value=price;
   if($('ws-sale-item-label')){ $('ws-sale-item-label').textContent=name; $('ws-sale-item-label').style.color='#1E293B'; }
   if($('ws-unit-price-label')) $('ws-unit-price-label').textContent=Number(price).toLocaleString()+' 머니';
+  if(name==='🎟️ 신용 구제 쿠폰' && $('ws-qty')){ $('ws-qty').value='1'; showToast('🎟️ 신용 구제 쿠폰은 한 사람에게 1개만 팔아요. 신용 점수가 기준 미만인 학생만 살 수 있어요.', 3500); }
   calcWsTotal();
   closeWsItemModal();
 }

@@ -2804,6 +2804,14 @@ function getWholesaleItems(classCode, studentNo) {
         list.push({ rowNo: i, name: String(data[i][2]||''), price: _newsPrice(Number(data[i][3])||0, newsPct), basePrice: Number(data[i][3])||0, stock: Number(data[i][4])||0, sold: Number(data[i][5])||0 });
       }
     }
+    // 🎟️ 신용 구제 쿠폰: 선생님이 '팔기'로 저장했으면 모든 도매상인 목록에 (재고 무한, 뉴스 물가 영향 없음)
+    var cpn = _couponCfg(ss, cc);
+    if (cpn.on) {
+      var sold = 0, sd = getOrCreateWholesaleSalesSheet(ss).getDataRange().getValues();
+      for (var q = 1; q < sd.length; q++) if (cleanText(sd[q][0]) === cc && String(sd[q][4]) === COUPON_ITEM && cleanText(String(sd[q][1])) === (sno || '교사')) sold += Number(sd[q][6]) || 0;
+      list.unshift({ rowNo: -1, name: COUPON_ITEM, price: cpn.price, basePrice: cpn.price, stock: 999999, sold: sold, unlimited: true, coupon: true,
+        note: '신용 ' + cpn.threshold + '점 미만 · ' + cpn.days + '일 동안 오르는 점수 ' + cpn.mult + '배 · 1명 1개' });
+    }
     return { success: true, list: list };
   } catch(e) { return { success: false, msg: e.message }; }
 }
@@ -2922,6 +2930,13 @@ function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, 
     if (!isTeacherSeller && sellerRowIdx === buyerRowIdx)
       return { success: false, msg: '판매자와 구매자 정보가 충돌합니다. 다시 시도해 주세요.' };
 
+    // ── 🎟️ 신용 구제 쿠폰: 구매자 점수·진행 중인 쿠폰을 판매 처리 안에서 다시 확인 ──
+    var isCoupon = String(itemName) === COUPON_ITEM, buyerCredit = Number(stuData[buyerRowIdx - 1][6]) || 0;
+    if (isCoupon) {
+      var cpErr = _couponSaleCheck(ss, cc, buyerSno, buyerCredit, qty, price);
+      if (cpErr) return { success: false, msg: cpErr };
+    }
+
     // ── 재고 확인 및 차감 ──
     var itemRowIdx = -1, itemStock = 0, curSold = 0;
     for (var k = 1; k < itemData.length; k++) {
@@ -2985,10 +3000,12 @@ function recordWholesaleSale(classCode, sellerNo, buyerNo, itemName, unitPrice, 
     // ★ 매점 법인세(국고 환수) 10% 자동 적립
     _addWholesaleCorpTaxAccrual(cc, sellerSno || '교사', Math.floor(total * 0.1));
 
+    var cpNote = isCoupon ? _couponGrant(ss, cc, buyerSno, buyerCredit, price) : '';   // 🎟️ 쿠폰 효과 시작
+
     SpreadsheetApp.flush();
     return {
   success: true,
-  msg: buyerName + '님 카드에서 ' + total.toLocaleString() + ' 머니 차감 완료!' + inflNote,
+  msg: buyerName + '님 카드에서 ' + total.toLocaleString() + ' 머니 차감 완료!' + inflNote + cpNote,
   total: total,
   inflated: infl.inflated,
   newSellerCard: newSellerCard
@@ -3514,10 +3531,13 @@ function deleteWholesaleSale(classCode, studentNo, saleIndex) {
     // ★ 매점 법인세 누적액도 취소분만큼 차감
     _subWholesaleCorpTaxAccrual(cc, sellerKey, Math.floor(total * 0.1));
 
+    // ── 🎟️ 쿠폰 판매를 지우면 쿠폰 효과도 끝냄 ──
+    var cpRevoked = itemName === COUPON_ITEM && _couponRevoke(ss, cc, buyerSno);
+
     // ── 판매 기록 삭제 ──
     saleSheet.deleteRow(sheetRowIdx + 1);
     SpreadsheetApp.flush();
-    return { success: true, msg: total.toLocaleString() + ' 머니가 구매자에게 환불되었습니다.' };
+    return { success: true, msg: total.toLocaleString() + ' 머니가 구매자에게 환불되었습니다.' + (cpRevoked ? '\n🎟️ 신용 구제 쿠폰 효과도 끝났어요.' : '') };
 
   } catch(e) {
     if (e.message.match(/lock/i))
@@ -5919,13 +5939,16 @@ function getHallOfFame(classCode, ym) {
 //  - 살 수 있는 사람: 지금 신용점수 < 기준 점수, 쿠폰 효과가 진행 중이 아닐 때 (겹치기·연장 없음)
 //  - 효과: 구매 시각부터 days일 동안 점수가 '오르는' 모든 경우 × mult (깎이는 점수는 그대로)
 //          기간 중 점수가 기준 이상이 되어도 기간 끝까지 유지. 만료는 점수를 줄 때마다 '구매 시각 + 기간'과 지금 시각을 비교
-//  - 판매 금액은 국고 수입(학생 이름 없이). 쿠폰 사용 여부는 본인·선생님·신용등급관리위원장만 볼 수 있음
+//  - 판매: 선생님이 '팔기'로 저장하면 모든 도매상인의 판매 목록에 '🎟️ 신용 구제 쿠폰'(재고 무한)이 뜨고, 끄면 사라짐.
+//          다른 물건처럼 도매상인이 팔고(구매자 → 판매자, 법인세 10%, 인플레이션 같음), 팔 때 점수·중복을 다시 확인
+//  - 쿠폰 사용 현황 목록은 본인·선생님·신용등급관리위원장만 볼 수 있음 (판매 기록은 파는 도매상인도 봄)
 // CreditCouponSettings: [0]학급코드 [1]설정JSON {on, price, threshold, mult, days}
 // CreditCoupons: [0]학급코드 [1]학생번호 [2]구매시각(ms) [3]만료시각(ms) [4]배율 [5]가격 [6]기준점수 [7]구매 때 점수 [8]구매일
 //  ※ 이 사이트는 서버 없이 브라우저에서 계산하므로 '지금 시각'은 사이트를 연 기기의 시계입니다.
 //  ※ Firestore 보안 규칙은 시트를 통째로 글자로 저장하는 구조라 점수 조건을 검사할 수 없어, 앱 안(이 함수들)에서만 막습니다.
 // ==========================================
 var COUPON_DEFAULT = { on: true, price: 300, threshold: 50, mult: 2, days: 14 };
+var COUPON_ITEM = '🎟️ 신용 구제 쿠폰';   // 도매상인 판매 목록에 보이는 이름
 function _couponCfg(ss, cc) {
   var sheet = ss.getSheetByName('CreditCouponSettings'), c = {};
   if (sheet) {
@@ -5993,35 +6016,31 @@ function getCouponInfo(classCode, studentNo) {
   } catch (e) { return { success: false, msg: e.message }; }
 }
 
-// 쿠폰 사기 — 화면에서 버튼을 막는 것과 별개로, 여기(한 번의 처리 안)에서 점수·중복·잔액을 다시 확인
-function buyCreditCoupon(classCode, studentNo) {
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(5000);
-    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo)), now = Date.now();
-    if (!sno) return { success: false, msg: '학생을 먼저 골라 주세요.' };
-    var cfg = _couponCfg(ss, cc);
-    if (!cfg.on) return { success: false, msg: '지금은 신용 구제 쿠폰을 팔지 않아요.' };
-    var stuSheet = getOrCreateStudentsSheet(ss), sd = stuSheet.getDataRange().getValues(), row = -1, credit = 0, card = 0;
-    for (var i = 1; i < sd.length; i++) if (cleanText(sd[i][0]) === cc && cleanText(String(sd[i][1])) === sno) { row = i + 1; card = Number(sd[i][4]) || 0; credit = Number(sd[i][6]) || 0; break; }
-    if (row === -1) return { success: false, msg: '학생 정보를 찾을 수 없어요.' };
-    if (!(credit < cfg.threshold)) return { success: false, msg: '구매할 수 없어요: 신용 점수 ' + cfg.threshold + '점 미만만 구매할 수 있어요. (지금 ' + credit + '점)' };
-    var a = _couponActive(ss, cc, sno, now);
-    if (a) return { success: false, msg: '구매할 수 없어요: 이미 쿠폰 효과가 진행 중이에요. (' + _couponWhen(a.expiresAt) + '까지 · 겹쳐 사거나 기간을 늘릴 수 없어요)' };
-    if (card < cfg.price) return { success: false, msg: '카드 잔액이 부족해요. (가격 ' + cfg.price.toLocaleString() + ' 머니 · 카드 ' + card.toLocaleString() + ' 머니)' };
-    var exp = now + cfg.days * 864e5, newCard = card - cfg.price, today = getTodayStr();
-    stuSheet.getRange(row, 5).setValue(newCard);
-    _couponSheet(ss).appendRow([cc, sno, now, exp, cfg.mult, cfg.price, cfg.threshold, credit, today]);
-    getOrCreateTransSheet(ss).appendRow([today, cc, sno, '[매점] 🎟️ 신용 구제 쿠폰 구매 (' + cfg.days + '일 동안 오르는 신용점수 ' + cfg.mult + '배)', '', cfg.price, newCard, '쿠폰구매']);
-    if (cfg.price > 0) getOrCreateTreasurySheet(ss).appendRow([cc, today, '[매점] 신용 구제 쿠폰 판매 수익', '수입', cfg.price, '승인', '', today]);
-    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
-    SpreadsheetApp.flush();
-    return { success: true, newCard: newCard,
-      msg: '🎟️ 신용 구제 쿠폰을 샀어요!\n' + _couponWhen(exp) + '까지(' + cfg.days + '일) 신용 점수가 오를 때마다 ' + cfg.mult + '배로 받아요.\n깎이는 점수는 그대로예요.' };
-  } catch (e) {
-    if (e.message.match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
-    return { success: false, msg: e.message };
-  } finally { lock.releaseLock(); }
+// 도매상인이 쿠폰을 팔 때 (recordWholesaleSale 안에서) — 점수·중복을 다시 확인. 문제가 없으면 '' 를 돌려줌
+function _couponSaleCheck(ss, cc, sno, credit, qty, price) {
+  var cfg = _couponCfg(ss, cc), now = Date.now();
+  if (!cfg.on) return '지금은 신용 구제 쿠폰을 팔지 않아요.';
+  if (qty !== 1) return '신용 구제 쿠폰은 한 번에 1개만 팔 수 있어요.';
+  if (price !== cfg.price) return '지금 신용 구제 쿠폰 가격은 ' + cfg.price.toLocaleString() + ' 머니예요. 물건을 다시 골라 주세요.';
+  if (!(Number(credit) < cfg.threshold)) return '이 학생은 살 수 없어요: 신용 점수 ' + cfg.threshold + '점 미만만 구매할 수 있어요. (지금 ' + credit + '점)';
+  var a = _couponActive(ss, cc, sno, now);
+  if (a) return '이 학생은 이미 쿠폰 효과가 진행 중이에요. (' + _couponWhen(a.expiresAt) + '까지 · 겹쳐 사거나 기간을 늘릴 수 없어요)';
+  return '';
+}
+// 판매가 끝난 뒤 쿠폰 효과 시작 (구매 시각부터 cfg.days일)
+function _couponGrant(ss, cc, sno, credit, price) {
+  var cfg = _couponCfg(ss, cc), now = Date.now(), exp = now + cfg.days * 864e5;
+  _couponSheet(ss).appendRow([cc, sno, now, exp, cfg.mult, price, cfg.threshold, Number(credit) || 0, getTodayStr()]);
+  return '\n🎟️ ' + _couponWhen(exp) + '까지(' + cfg.days + '일) 오르는 신용점수 ' + cfg.mult + '배!';
+}
+// 판매 기록을 지우면(환불) 진행 중인 쿠폰 효과도 바로 끝냄
+function _couponRevoke(ss, cc, sno) {
+  var sheet = ss.getSheetByName('CreditCoupons'); if (!sheet) return false;
+  var data = sheet.getDataRange().getValues(), now = Date.now(), done = false;
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (cleanText(data[i][0]) === cc && cleanText(String(data[i][1])) === sno && Number(data[i][2]) <= now && now < Number(data[i][3])) { sheet.getRange(i + 1, 4).setValue(now); done = true; break; }
+  }
+  return done;
 }
 
 // 선생님 · 신용등급관리위원장: 쿠폰 사용 중인 학생 목록과 만료일 (+ 최근 끝난 쿠폰)
@@ -6067,7 +6086,8 @@ function setCouponConfig(classCode, cfg, byTeacher) {
     for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(JSON.stringify(o)); done = true; break; }
     if (!done) sheet.appendRow([cc, JSON.stringify(o)]);
     SpreadsheetApp.flush();
-    var r = getCouponUsers(cc, true, ''); r.msg = '쿠폰 설정을 저장했어요. (이미 산 쿠폰은 산 때의 배율·기간 그대로예요)';
+    var r = getCouponUsers(cc, true, '');
+    r.msg = '쿠폰 설정을 저장했어요.\n' + (o.on ? '🛒 도매상인 판매 목록에 "' + COUPON_ITEM + '"(재고 무한)을 올렸어요.' : '🛒 도매상인 판매 목록에서 쿠폰을 내렸어요.') + '\n(이미 산 쿠폰은 산 때의 배율·기간 그대로예요)';
     return r;
   } catch (e) { return { success: false, msg: e.message }; }
 }
