@@ -992,6 +992,7 @@ function loadTx(cc,sno,tbodyId,cntId){
         : '';
       h+='<tr><td class="td">'+tx.date+'</td><td>'+esc(tx.memo)+' <span class="tt">'+esc(tx.type||'')+'</span></td><td>'+inc+'</td><td>'+exp+'</td><td class="tb">'+Number(tx.balance).toLocaleString()+' 머니</td>'+act+'</tr>';
     });
+    setTimeout(function(){ msSplit($(tbodyId), r.list, function(x){ return x.date; }, 'tx-'+tbodyId); }, 0);   // 📅 이달 / 🗂️ 지난 기록
     tb.innerHTML=h;
   }).getTransactions(cc,sno);
 }
@@ -1958,9 +1959,10 @@ function loadFineRequestsMine(){
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.success){ box.innerHTML='<div class="empty-msg">불러오지 못했어요.</div>'; return; }
     if($('fine-req-cnt')) $('fine-req-cnt').textContent=r.pending+'건 대기';
-    var list=r.list.slice(0,15);
+    var list=r.list;
     box.innerHTML = list.length ? '<div class="fr-list">'+list.map(function(x){ return fineReqRow(x,'police'); }).join('')+'</div>'
       : '<div class="empty-msg">아직 결재를 청구한 벌금이 없어요.</div>';
+    msSplit(box, list, function(x){ return x.date; }, 'fineReq', { keep:function(x){ return x.status==='대기'; }, sum:function(x){ return x.status==='승인'?x.amount:0; }, sumLabel:'부과된 벌금' });
   }).withFailureHandler(function(e){ box.innerHTML='<div class="empty-msg">오류: '+esc(e.message)+'</div>'; })
   .getFineRequests(_cc||_adminCC, '');
 }
@@ -5127,6 +5129,7 @@ function loadStockRequests(){
         h+='</div>';
       });
       c.innerHTML=h;
+      msSplit(c, r.list, function(x){ return x.date; }, 'wsStockReq', { keep:function(x){ return x.status!=='승인'&&x.status!=='반려'; } });
     })
     .getStockRequests(targetCC, targetSno);
 }
@@ -5619,3 +5622,82 @@ function returnToStudentDash(){
   renderStudentTiles();
 }
 
+// ============================================================
+// 📅 이달 기록 / 🗂️ 지난 기록 — 은행청장·국세청장·경찰서장·도매상인·용돈기입장 등의 기록 목록을 달로 나눠 보여 줌
+//  목록을 그린 뒤 msSplit(상자, 기록 배열, 날짜 꺼내기, 이름, {keep, sum, sumLabel})
+//   - 상자 안의 카드/표 줄 하나 = 기록 하나(같은 순서). 개수가 안 맞으면 아무것도 바꾸지 않음(원래대로 보임)
+//   - keep(기록)이 true면 지난달 기록이어도 '이달 기록'에 남김 (진행 중인 예금, 승인 대기처럼 아직 할 일이 있는 것)
+//   - 지난 기록은 달마다 접었다 펼 수 있음(가장 최근 달만 펼침). sum이 있으면 달마다 합계
+//  수정·삭제 버튼은 원래 카드/줄 그대로라 그대로 동작함
+// ============================================================
+var _msMode = {}, _msOpen = {}, _msState = {};
+function msYm(v){
+  if(v instanceof Date) return v.getFullYear()+'-'+('0'+(v.getMonth()+1)).slice(-2);
+  var m=String(v==null?'':v).match(/(\d{4})\s*[-.\/년]\s*(\d{1,2})/);
+  return m ? m[1]+'-'+('0'+m[2]).slice(-2) : '';
+}
+function msLabel(ym){ var p=ym.split('-'); return (+p[0])+'년 '+(+p[1])+'월'; }
+function msSplit(box, list, dateOf, key, opts){
+  opts=opts||{};
+  var bar=document.getElementById('ms-bar-'+key);
+  if(!box||!list){ if(bar) bar.remove(); return; }
+  var kids=[].slice.call(box.children).filter(function(k){ return !k.classList.contains('ms-x'); });
+  if(kids.length!==list.length && kids.length===1 && kids[0].children.length===list.length){ box=kids[0]; kids=[].slice.call(box.children); }
+  if(!list.length || kids.length!==list.length){ if(bar) bar.remove(); return; }
+  // 처음 그린 순서대로 번호를 붙여 둠 → 다시 나눌 때(버튼) 순서가 바뀌어 있어도 기록과 줄이 어긋나지 않음
+  if(kids.every(function(k){ return k.dataset.msi!==undefined; })) kids.sort(function(x,y){ return x.dataset.msi-y.dataset.msi; });
+  else kids.forEach(function(k,i){ k.dataset.msi=i; });
+  var now=msYm(new Date()), cur=[], curOwn=[], past={}, order=[], kept=0;
+  list.forEach(function(it,i){
+    var ym=msYm(dateOf(it))||now;
+    if(ym>=now){ cur.push(i); curOwn.push(i); }
+    else if(opts.keep && opts.keep(it)){ cur.push(i); kept++; }
+    else { if(!past[ym]){ past[ym]=[]; order.push(ym); } past[ym].push(i); }
+  });
+  order.sort().reverse();
+  var mode=_msMode[key]||'cur'; if(mode==='past'&&!order.length) mode='cur';
+  var isRow=kids[0].tagName==='TR', tbl=isRow?box.closest('table'):null;
+  var cols=isRow?Math.max((tbl&&tbl.querySelectorAll('thead th').length)||0, kids[0].children.length):0;
+  var sumOf=function(idx){ var s=0; idx.forEach(function(i){ s+=Number(opts.sum(list[i]))||0; }); return s; };
+  var anchor=isRow?(box.closest('.stw')||tbl):box;
+  if(!bar){ bar=document.createElement('div'); bar.id='ms-bar-'+key; bar.className='ms-bar'; anchor.parentNode.insertBefore(bar, anchor); }
+  bar.innerHTML='<button class="ms-btn'+(mode==='cur'?' on':'')+'" onclick="msSet(\''+key+'\',\'cur\')">📅 이달 기록 <b>'+cur.length+'</b></button>'+
+    '<button class="ms-btn'+(mode==='past'?' on':'')+'"'+(order.length?'':' disabled')+' onclick="msSet(\''+key+'\',\'past\')">🗂️ 지난 기록 <b>'+(list.length-cur.length)+'</b></button>'+
+    (mode==='cur'&&opts.sum?'<span class="ms-sum">'+(opts.sumLabel||'이달 합계')+' <b>'+sumOf(curOwn).toLocaleString()+'</b> 머니</span>':'')+
+    (mode==='cur'&&kept?'<span class="ms-kept">⏳ 지난달부터 이어진 '+kept+'건 포함</span>':'');
+  box.querySelectorAll('.ms-x').forEach(function(x){ x.remove(); });
+  var mk=function(html){ var el; if(isRow){ el=document.createElement('tr'); el.innerHTML='<td colspan="'+cols+'" style="padding:0;border:none;">'+html+'</td>'; } else { el=document.createElement('div'); el.innerHTML=html; } el.className='ms-x'; return el; };
+  kids.forEach(function(k){ k.style.display='none'; });
+  if(mode==='cur'){
+    cur.forEach(function(i){ kids[i].style.display=''; box.appendChild(kids[i]); });
+    if(!cur.length) box.appendChild(mk('<div class="ms-empty">📅 이번 달 기록은 아직 없어요.'+(order.length?' 🗂️ <b>지난 기록</b>을 눌러 보세요.':'')+'</div>'));
+  } else {
+    order.forEach(function(ym, n){
+      var open=_msOpen[key+'|'+ym]!==undefined?_msOpen[key+'|'+ym]:n===0;
+      box.appendChild(mk('<div class="ms-head'+(open?' open':'')+'" onclick="msToggle(\''+key+'\',\''+ym+'\','+(!open)+')"><span>'+(open?'▾':'▸')+' '+msLabel(ym)+'</span><span>'+past[ym].length+'건'+(opts.sum?' · '+sumOf(past[ym]).toLocaleString()+' 머니':'')+'</span></div>'));
+      past[ym].forEach(function(i){ box.appendChild(kids[i]); kids[i].style.display=open?'':'none'; });
+    });
+  }
+  _msState[key]={box:box, list:list, dateOf:dateOf, opts:opts};
+}
+function msSet(key, mode){ _msMode[key]=mode; var s=_msState[key]; if(s) msSplit(s.box, s.list, s.dateOf, key, s.opts); }
+function msToggle(key, ym, open){ _msOpen[key+'|'+ym]=open; var s=_msState[key]; if(s) msSplit(s.box, s.list, s.dateOf, key, s.opts); }
+// 목록을 그리는 함수 뒤에 자동으로 붙이기 (그 함수를 부르는 곳은 그대로)
+(function(){
+  function wrap(name, after){
+    var f=window[name]; if(typeof f!=='function') return;
+    window[name]=function(){ var r=f.apply(this, arguments); try{ after(arguments); }catch(e){ console.warn('[이달/지난 기록]', name, e); } return r; };
+  }
+  var active=function(d){ return d.status==='활성'; };
+  // 🏦 은행: 예금 기록 (진행 중인 예금은 늘 '이달 기록'에)
+  wrap('renderDepositList', function(a){ msSplit($('deposit-records-container'), a[0], function(d){ return d.startDate; }, 'deposits', { keep:active, sum:function(d){ return d.principal; }, sumLabel:'이달 예금 원금' }); });
+  wrap('renderDepositTable', function(a){ msSplit($('deposit-tbody'), a[0], function(d){ return d.startDate; }, 'depositsTbl', { keep:active, sum:function(d){ return d.principal; }, sumLabel:'이달 예금 원금' }); });
+  // 🏛️ 국세청: 국고 기록 (승인 대기는 늘 '이달 기록'에) · 마스터 국고 승인
+  var net=function(d){ return d.status==='승인' ? (d.type==='수입'?1:-1)*(Number(d.amount)||0) : 0; };
+  wrap('renderTreasuryList', function(a){ msSplit($('treasury-records-container'), a[0], function(d){ return d.date; }, 'treasury', { keep:function(d){ return d.status==='대기'; }, sum:net, sumLabel:'승인된 수입−지출' }); });
+  wrap('renderTeacherTreasuryList', function(a){ msSplit($('teacher-treasury-container'), a[0], function(d){ return d.date; }, 'treasuryT', { keep:function(d){ return d.status==='대기'; }, sum:net, sumLabel:'승인된 수입−지출' }); });
+  // 🚓 경찰서: 부과된 벌금 내역
+  wrap('renderFineLog', function(){ msSplit($('fine-log-tbody'), _fineLogData, function(d){ return d.date; }, 'fineLog', { sum:function(d){ return d.expense; }, sumLabel:'이달 벌금' }); });
+  // 🏪 도매상: 판매 기록
+  wrap('renderWsSalesLog', function(){ msSplit($('ws-sales-log'), _wsSalesData, function(d){ return d.date; }, 'wsSales', { sum:function(d){ return d.total; }, sumLabel:'이달 매출' }); });
+})();
