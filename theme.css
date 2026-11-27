@@ -1169,3 +1169,47 @@ body:has(#view-master-dashboard.active) ::-webkit-scrollbar-thumb{ border-color:
 .sm-pop-perk textarea:focus{outline:none;border-color:#F59E0B;box-shadow:var(--focus)}
 .sm-pop-btns{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
 .sm-pop-cnt{font-size:13px;color:var(--gray)}
+
+/* ===== 국민 관리: 직업 여러 개 고르기 (app.js jobPicker) ===== */
+.jb-pick{min-width:120px;max-width:240px}
+.jb-pick summary{cursor:pointer;padding:5px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;background:var(--surf);list-style:none;white-space:normal;line-height:1.35}
+.jb-pick summary::-webkit-details-marker{display:none}
+.jb-pick summary::after{content:' ▾';color:var(--gray)}
+.jb-pick[open] summary{border-color:#F59E0B;background:#FFFBEB}
+.jb-menu{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;padding:8px;border:1.5px solid #FDE68A;border-radius:10px;background:#FFFDF5}
+.jb-menu label{display:flex;align-items:center;gap:4px;font-size:13px;padding:3px 8px;border-radius:999px;background:#fff;border:1px solid var(--border);cursor:pointer;white-space:nowrap}
+.jb-menu label:has(input:checked){background:#FEF3C7;border-color:#F59E0B;color:#92400E;font-weight:700}
+.jb-hint{width:100%;font-size:12px;color:var(--gray)}
+
+/* ===== 부동산: 세입자 표시 · 매물 수정 창 ===== */
+.re-lease{font-size:12px;background:#CCFBF1;color:#0F766E;border-radius:999px;padding:1px 7px}
+.re-owner-sm{font-size:12px;color:var(--gray);margin-top:2px}
+.sm-seat.leased .sm-desk{background:#CCFBF1;border-color:#2DD4BF}
+.sm-seat.leased .sm-desk b{color:#0F766E}
+.sm-seat.leased .sm-desk span{color:#115E59}
+.sm-seat.leased .sm-tag{background:#0D9488;color:#fff}
+.sm-tag-owner{margin-top:2px;font-size:11px;color:#475569;background:rgba(255,255,255,.85);border-radius:6px;padding:0 6px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.sm-legend .lg.leased{background:#CCFBF1;border:2px solid #2DD4BF}
+.sm-pop-edit{margin:0 0 12px;width:100%}
+.re-ed{max-width:480px;max-height:calc(100vh - 32px);overflow-y:auto}
+.re-ed-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.re-ed label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--ink-2)}
+.re-ed input,.re-ed select{width:100%;box-sizing:border-box;padding:9px 10px;border:2px solid var(--line-strong);border-radius:10px;font-size:16px;font-family:inherit;background:#fff}
+.re-ed input:focus,.re-ed select:focus{outline:none;border-color:#F59E0B;box-shadow:var(--focus)}
+.re-ed select:disabled{background:#F1F5F9;color:var(--gray)}
+.re-ed-sec{font-size:16px;color:var(--dark);margin:14px 0 6px;font-weight:700}
+.re-ed-note{margin-top:10px;font-size:13px;color:#92400E;background:#FFFBEB;border-radius:10px;padding:8px 10px;line-height:1.5}
+.re-ed .sm-pop-btns{margin-top:14px;justify-content:flex-end;gap:8px}
+@media (max-width:480px){.re-ed-grid{grid-template-columns:1fr}}
+
+/* ===== 은행청장 기록하기: 우대 금리 자동 표시 ===== */
+.dp-prime{margin-bottom:15px;padding:11px 13px;border-radius:10px;font-size:14px;line-height:1.5;background:#F8FAFC;border:2px dashed var(--border);color:var(--ink-2)}
+.dp-prime.yes{background:#FFFBEB;border:2px solid #FBBF24;color:#92400E}
+.dp-prime.no{background:#F1F5F9;border:2px solid #CBD5E1;color:#475569}
+.dp-prime-list{margin:-5px 0 15px;padding:10px 12px;border-radius:10px;background:#FFFBEB;border:1px solid #FDE68A}
+.dp-pl-title{font-size:14px;font-weight:700;color:#92400E;margin-bottom:6px}
+.dp-pl-title span{font-weight:400;font-size:13px}
+.dp-pl-chips{display:flex;flex-wrap:wrap;gap:6px}
+.dp-pl-chip{font-size:13px;background:#fff;border:1px solid #FDE68A;border-radius:999px;padding:3px 10px;color:#1E293B}
+.dp-pl-chip b{color:#D97706}
+.dp-pl-none{font-size:13px;color:#92400E}

@@ -304,6 +304,7 @@ function regenerateAllCodes(classCode) {
 // ==========================================
 function loginStudent(classCode, studentNo, studentCode) {
   try {
+    try { _collectWeeklyRent(classCode); } catch (re) {}   // 새 주가 되면 월세 자동으로 걷기 (잔액을 보여 주기 전에)
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = getOrCreateStudentsSheet(ss);
     var data = sheet.getDataRange().getValues();
@@ -492,12 +493,20 @@ function getOrCreateDepositsSheet(ss) {
 }
 
 // ── 예금 이자율 설정/조회 (BankSettings 시트) ──
-// BankSettings: [0]학급코드 [1]1주이자율 [2]2주이자율 [3]3주이자율 [4]4주이자율
+// BankSettings: [0]학급코드 [1]1주이자율 [2]2주이자율 [3]3주이자율 [4]4주이자율 [5]우대금리 [6]우대 기준 신용점수(이상이면 자동 우대)
+var PRIME_MIN_DEFAULT = 80;
+// 예금 이율: 기간별 이자율(뉴스 반영) + 신용점수가 선생님이 정한 기준 이상이면 우대 금리를 자동으로 더함
+function _depositRate(settings, wk, credit) {
+  var base = Number({ 1: settings.r1, 2: settings.r2, 3: settings.r3, 4: settings.r4 }[wk]) || 0;
+  var min = settings.primeMin == null ? PRIME_MIN_DEFAULT : Number(settings.primeMin);
+  var prime = Number(settings.prime) > 0 && (Number(credit) || 0) >= min;
+  return { rate: prime ? Math.round((base + Number(settings.prime)) * 100) / 100 : base, base: base, prime: prime, min: min };
+}
 function getOrCreateBankSettingsSheet(ss) {
   var sheet = ss.getSheetByName('BankSettings');
   if (!sheet) {
     sheet = ss.insertSheet('BankSettings');
-    sheet.appendRow(['학급코드','1주이자율','2주이자율','3주이자율','4주이자율','우대금리']);
+    sheet.appendRow(['학급코드','1주이자율','2주이자율','3주이자율','4주이자율','우대금리','우대기준신용']);
   }
   return sheet;
 }
@@ -513,90 +522,44 @@ function getBankSettings(classCode) {
     for (var i = 1; i < data.length; i++) {
       if (cleanText(data[i][0]) === cc) {
         var p = (data[i][5] !== undefined && data[i][5] !== '') ? Number(data[i][5]) : 2.0;
-        var result = { success: true, r1: Number(data[i][1])||3, r2: Number(data[i][2])||5, r3: Number(data[i][3])||8, r4: Number(data[i][4])||12, prime: p };
+        var pm = (data[i][6] !== undefined && data[i][6] !== '') ? Number(data[i][6]) : PRIME_MIN_DEFAULT;
+        var result = { success: true, r1: Number(data[i][1])||3, r2: Number(data[i][2])||5, r3: Number(data[i][3])||8, r4: Number(data[i][4])||12, prime: p, primeMin: pm };
         _newsBankRates(classCode, result);
         _setCache('banksettings', classCode, result, 120);
         return result;
       }
     }
-    var def = _newsBankRates(classCode, { success: true, r1: 3, r2: 5, r3: 8, r4: 12, prime: 2.0 });
+    var def = _newsBankRates(classCode, { success: true, r1: 3, r2: 5, r3: 8, r4: 12, prime: 2.0, primeMin: PRIME_MIN_DEFAULT });
     _setCache('banksettings', classCode, def, 120);
     return def;
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
-function setBankSettings(classCode, r1, r2, r3, r4, prime) {
+function setBankSettings(classCode, r1, r2, r3, r4, prime, primeMin) {
   try {
+    var pm = (primeMin === undefined || primeMin === null || String(primeMin).trim() === '') ? PRIME_MIN_DEFAULT : Number(primeMin);
+    if (!isFinite(pm) || pm < 0 || pm > 100) return { success: false, msg: '우대 기준 신용점수는 0~100점으로 적어 주세요.' };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = getOrCreateBankSettingsSheet(ss);
     var data = sheet.getDataRange().getValues();
     var cc = cleanText(classCode);
     for (var i = 1; i < data.length; i++) {
       if (cleanText(data[i][0]) === cc) {
-        sheet.getRange(i+1,2,1,5).setValues([[Number(r1)||0, Number(r2)||0, Number(r3)||0, Number(r4)||0, Number(prime)||0]]);
+        sheet.getRange(i+1,2,1,6).setValues([[Number(r1)||0, Number(r2)||0, Number(r3)||0, Number(r4)||0, Number(prime)||0, pm]]);
         try { CacheService.getScriptCache().remove('banksettings_'+cc); } catch(e){}
         return { success: true, msg: "이자율과 우대금리가 저장되었습니다." };
       }
     }
-    sheet.appendRow([cc, Number(r1)||0, Number(r2)||0, Number(r3)||0, Number(r4)||0, Number(prime)||0]);
+    sheet.appendRow([cc, Number(r1)||0, Number(r2)||0, Number(r3)||0, Number(r4)||0, Number(prime)||0, pm]);
     try { CacheService.getScriptCache().remove('banksettings_'+cc); } catch(e){}
     return { success: true, msg: "이자율과 우대금리가 저장되었습니다." };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
 // ── 은행청장이 날짜·이율을 직접 지정해서 예금 등록 ──
+// 예전 이름 — 이율은 서버가 정함 (createDepositByBankerWithCredit 참고)
 function createDepositByBanker(classCode, studentNo, weeks, amount, finalRate, startDate) {
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(5000);
- 
-    var ss       = SpreadsheetApp.getActiveSpreadsheet();
-    var stuSheet = getOrCreateStudentsSheet(ss);
-    var depSheet = getOrCreateDepositsSheet(ss);
-    var tSheet   = getOrCreateTransSheet(ss);
-    var stuData  = stuSheet.getDataRange().getValues();
-    var cc  = cleanText(classCode);
-    var sno = cleanText(String(studentNo));
-    var amt = parseInt(amount);
-    var wk  = parseInt(weeks);
-    var rate = parseFloat(finalRate);
- 
-    if (isNaN(amt) || amt <= 0) return { success: false, msg: "금액을 올바르게 입력해 주세요." };
- 
-    var stuRowIdx = -1, cardBalance = 0, bankBalance = 0;
-    for (var i = 1; i < stuData.length; i++) {
-      if (cleanText(stuData[i][0]) === cc && cleanText(String(stuData[i][1])) === sno) {
-        stuRowIdx = i + 1;
-        cardBalance = Number(stuData[i][4]) || 0;
-        bankBalance = Number(stuData[i][5]) || 0;
-        break;
-      }
-    }
-    if (stuRowIdx === -1) return { success: false, msg: "학생 정보를 찾을 수 없습니다." };
-    if (cardBalance < amt) return { success: false, msg: "카드 잔액이 부족합니다. (보유: " + cardBalance + " 머니)" };
- 
-    var start   = new Date(startDate);
-    var expire  = new Date(start.getTime() + wk * 7 * 24 * 60 * 60 * 1000);
-    var expireStr = Utilities.formatDate(expire, Session.getScriptTimeZone(), 'yyyy-MM-dd');
- 
-    var newCard = cardBalance - amt;
-    var newBank = bankBalance + amt;
- 
-    stuSheet.getRange(stuRowIdx, 5).setValue(newCard);
-    stuSheet.getRange(stuRowIdx, 6).setValue(newBank);
-    depSheet.appendRow([cc, sno, wk + '주', amt, rate, startDate, expireStr, '활성']);
-    tSheet.appendRow([startDate, cc, sno, wk + '주 예금 가입 (은행청장 등록, ' + rate + '%)', '', amt, newCard, '예금가입']);
- 
-    try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
-    SpreadsheetApp.flush();
-    return { success: true, msg: wk + "주 예금 등록 완료!" };
- 
-  } catch(e) {
-    if (e.message.match(/lock/i)) return { success: false, msg: "🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요." };
-    return { success: false, msg: e.message };
-  } finally {
-    lock.releaseLock();
-  }
+  return createDepositByBankerWithCredit(classCode, studentNo, weeks, amount, finalRate, startDate);
 }
 
 // ── 예금 기록 수정 (은행청장: 이자율 + 만기일 변경) ──
@@ -922,13 +885,14 @@ function createDeposit(classCode, studentNo, weeks, amount) {
     if ([1,2,3,4].indexOf(wk)===-1) return { success: false, msg: "예금 기간을 선택해 주세요." };
  
     var settings = getBankSettings(classCode);
-    var rateMap  = { 1: settings.r1, 2: settings.r2, 3: settings.r3, 4: settings.r4 };
-    var rate     = rateMap[wk];
- 
+    var rate;
+
     var stuRowIdx=-1, cardBalance=0, bankBalance=0;
     for (var i=1; i<stuData.length; i++) {
       if (cleanText(stuData[i][0])===cc && cleanText(String(stuData[i][1]))===sno) {
-        stuRowIdx=i+1; cardBalance=Number(stuData[i][4])||0; bankBalance=Number(stuData[i][5])||0; break;
+        stuRowIdx=i+1; cardBalance=Number(stuData[i][4])||0; bankBalance=Number(stuData[i][5])||0;
+        rate = _depositRate(settings, wk, stuData[i][6]).rate;   // 신용점수가 기준 이상이면 우대 금리 자동
+        break;
       }
     }
     if (stuRowIdx===-1) return { success: false, msg: "학생 정보를 찾을 수 없습니다." };
@@ -1338,6 +1302,7 @@ function chargeFine(classCode, studentNo, reason, amount) {
 // ==========================================
 // [부동산] 사물함/자리 거래
 // RealEstate: [0]학급코드 [1]자산번호 [2]자산명 [3]종류 [4]소유자학생번호 [5]가격 [6]임대료 [7]상태(매물/소유/임대중)
+//             [8]세입자학생번호 [9]임대방식(월세/전세) [10]전세금 [11]월세 낸 주('W'+월요일)   ← editRealEstate가 적음
 // ==========================================
 function getOrCreateRealEstateSheet(ss) {
   var sheet = ss.getSheetByName('RealEstate');
@@ -1360,6 +1325,7 @@ function getRealEstateList(classCode) {
     for (var i=1; i<stuData.length; i++) {
       if (cleanText(stuData[i][0])===cc) nameMap[String(stuData[i][1])]=stuData[i][2]||'';
     }
+    if (_collectWeeklyRent(cc)) reData = reSheet.getDataRange().getValues();   // 새 주가 되면 월세 자동으로 걷기
     var list = [], fx = _newsEffects(cc);
     for (var j = 1; j < reData.length; j++) {
       if (cleanText(reData[j][0])===cc) {
@@ -1371,6 +1337,11 @@ function getRealEstateList(classCode) {
           type:      reData[j][3],
           ownerNo:   owner,
           ownerName: nameMap[owner]||'국가',
+          tenantNo:   String(reData[j][8] == null ? '' : reData[j][8]),
+          tenantName: reData[j][8] !== '' && reData[j][8] != null ? (nameMap[String(reData[j][8])] || '') : '',
+          leaseType:  String(reData[j][9] || ''),
+          leaseAmt:   Number(reData[j][10]) || 0,
+          rentPaid:   String(reData[j][11] || '') === 'W' + _newsWeek(),   // 이번 주 월세를 냈는지
           price:     _newsPrice(Number(reData[j][5])||0, fx.estate),
           rent:      _newsPrice(Number(reData[j][6])||0, fx.rent),
           basePrice: Number(reData[j][5])||0,
@@ -2090,9 +2061,11 @@ function createDepositByBankerWithCredit(classCode, studentNo, weeks, amount, fi
     var sno  = cleanText(String(studentNo));
     var amt  = parseInt(amount);
     var wk   = parseInt(weeks);
-    var rate = parseFloat(finalRate);
+    // finalRate(화면 값)는 쓰지 않음: 기간 이자율 + 신용점수가 선생님 기준 이상이면 우대 금리를 서버에서 계산
+    var rate, primeInfo;
 
     if (isNaN(amt) || amt <= 0) return { success: false, msg: '금액을 올바르게 입력해 주세요.' };
+    if ([1,2,3,4].indexOf(wk) === -1) return { success: false, msg: '예금 기간을 선택해 주세요.' };
 
     // 만기 해지 시 부여될 신용점수 미리 조회 (안내용)
     var creditSettings   = getDepositCreditSettings(classCode);
@@ -2105,6 +2078,8 @@ function createDepositByBankerWithCredit(classCode, studentNo, weeks, amount, fi
         stuRowIdx   = i + 1;
         cardBalance = Number(stuData[i][4]) || 0;
         bankBalance = Number(stuData[i][5]) || 0;
+        primeInfo   = _depositRate(getBankSettings(classCode), wk, stuData[i][6]);
+        rate        = primeInfo.rate;
         break;
       }
     }
@@ -2129,8 +2104,8 @@ function createDepositByBankerWithCredit(classCode, studentNo, weeks, amount, fi
     SpreadsheetApp.flush();
     return {
       success: true,
-      msg: wk+'주 예금 등록 완료! (만기 해지 시 신용점수 +'+creditGainPreview+'점 자동 부여 예정)',
-      creditGainPreview: creditGainPreview
+      msg: wk+'주 예금 등록 완료! 이율 '+rate+'%'+(primeInfo.prime ? ' (👑 우대 금리 자동 적용)' : '')+'\n(만기 해지 시 신용점수 +'+creditGainPreview+'점 자동 부여 예정)',
+      creditGainPreview: creditGainPreview, rate: rate, prime: primeInfo.prime
     };
 
   } catch(e) {
@@ -3414,6 +3389,7 @@ function resetClassEconomy(classCode) {
         if (cleanText(reData[j][0]) === cc) {
           reSheet.getRange(j+1, 5).setValue('');      // 소유자학생번호
           reSheet.getRange(j+1, 8).setValue('매물');  // 상태
+          reSheet.getRange(j+1, 9, 1, 4).setValues([['', '', '', '']]);  // 세입자·임대방식·전세금·월세 낸 주
           reCount++;
         }
       }
@@ -5145,7 +5121,8 @@ function getSeatMap(classCode) {
     var seats = r.list.filter(function (x) { return String(x.type).trim() === '자리'; }).map(function (x) {
       var s = m.seats[String(x.assetNo).trim()] || {};
       return { assetNo: String(x.assetNo).trim(), name: x.name, price: x.price, rent: x.rent, basePrice: x.basePrice, status: String(x.status || ''),
-        ownerNo: x.ownerNo, ownerName: String(x.status) === '매물' ? '' : x.ownerName, x: s.x == null ? null : s.x, y: s.y == null ? null : s.y, perk: s.perk || '' };
+        ownerNo: x.ownerNo, ownerName: String(x.status) === '매물' ? '' : x.ownerName, x: s.x == null ? null : s.x, y: s.y == null ? null : s.y, perk: s.perk || '',
+        tenantNo: x.tenantNo, tenantName: x.tenantName, leaseType: x.leaseType, leaseAmt: x.leaseAmt, rentPaid: x.rentPaid };
     });
     return { success: true, seats: seats, items: m.items };
   } catch (e) { return { success: false, msg: e.message }; }
@@ -5235,4 +5212,126 @@ function payFineTreasury(classCode, studentNo) {
     if (e.message.match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
     return { success: false, msg: e.message };
   } finally { lock.releaseLock(); }
+}
+
+
+// ==========================================
+// [부동산] 매물 수정 — 이름·종류·가격·임대료·소유자·세입자(월세/전세)
+//  선생님(byTeacher) 또는 부동산 중개인 학생(editorSno)만
+//  d = {name, type, price, rent, ownerNo, tenantNo, leaseType, leaseAmt}
+//  소유자 없음 → 매물(세입자도 지움) / 소유자만 → 소유 / 소유자+세입자 → 임대중
+//  돈: 세입자가 새로 정해지면 월세 첫 주치(또는 전세금)를 세입자 → 소유자 카드로 옮김.
+//      전세가 끝나면(세입자·소유자·전세금이 바뀌거나 매물로) 전세금을 소유자 → 세입자로 돌려줌.
+//      이름·가격만 고치면 돈은 그대로. 매주 월세는 _collectWeeklyRent가 걷음.
+// ==========================================
+function editRealEstate(classCode, assetNo, d, byTeacher, editorSno) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), no = String(assetNo || '').trim();
+    var stuData = getOrCreateStudentsSheet(ss).getDataRange().getValues(), names = {};
+    for (var i = 1; i < stuData.length; i++) if (cleanText(stuData[i][0]) === cc) names[cleanText(String(stuData[i][1]))] = { name: stuData[i][2] || '', job: String(stuData[i][3] || '') };
+    var ed = names[cleanText(String(editorSno == null ? '' : editorSno))];
+    var realtor = ed && String(ed.job).split(/\s*,\s*/).indexOf('부동산 중개인') !== -1;
+    if (byTeacher !== true && !realtor) return { success: false, msg: '매물 수정은 선생님이나 부동산 중개인만 할 수 있어요.' };
+    d = d || {};
+    var name = String(d.name || '').trim().slice(0, 40), type = String(d.type || '').trim() || '기타';
+    var price = Number(d.price), rent = Number(d.rent || 0), amt = Number(d.leaseAmt || 0);
+    if (!name) return { success: false, msg: '자산 이름을 적어 주세요.' };
+    if (!isFinite(price) || price < 0 || !isFinite(rent) || rent < 0 || !isFinite(amt) || amt < 0) return { success: false, msg: '가격과 임대료는 0 이상의 숫자로 적어 주세요.' };
+    var owner = cleanText(String(d.ownerNo == null ? '' : d.ownerNo)), tenant = cleanText(String(d.tenantNo == null ? '' : d.tenantNo));
+    var lease = String(d.leaseType || '');
+    if (owner && !names[owner]) return { success: false, msg: owner + '번 학생을 찾을 수 없어요.' };
+    if (!owner) { tenant = ''; }
+    if (tenant) {
+      if (!names[tenant]) return { success: false, msg: tenant + '번 학생을 찾을 수 없어요.' };
+      if (tenant === owner) return { success: false, msg: '소유자와 세입자가 같아요. 다른 학생을 골라 주세요.' };
+      if (lease !== '월세' && lease !== '전세') return { success: false, msg: '월세인지 전세인지 골라 주세요.' };
+    } else { lease = ''; amt = 0; }
+    if (lease !== '전세') amt = 0;
+    var sheet = getOrCreateRealEstateSheet(ss), data = sheet.getDataRange().getValues(), row = -1;
+    for (var j = 1; j < data.length; j++) if (cleanText(data[j][0]) === cc && String(data[j][1]).trim() === no) { row = j + 1; break; }
+    if (row === -1) return { success: false, msg: '매물을 찾을 수 없어요.' };
+    price = Math.round(price); rent = Math.round(rent); amt = Math.round(amt);
+    var o = data[row - 1], oTenant = String(o[7]) === '임대중' ? cleanText(String(o[8] == null ? '' : o[8])) : '';
+    var old = { owner: cleanText(String(o[4] == null ? '' : o[4])), tenant: oTenant, lease: String(o[9] || ''), amt: Number(o[10]) || 0 };
+    var same = old.tenant && old.tenant === tenant && old.owner === owner && old.lease === lease && (lease !== '전세' || old.amt === amt);
+    var week = same ? String(o[11] || '') : '', money = _reMoney(ss, cc), err = '', moved = [];
+    if (!same) {
+      if (old.tenant && old.lease === '전세' && old.amt > 0) {
+        err = money.move(old.owner, old.tenant, old.amt, '[전세금 반환] ' + no + ' ' + name);
+        if (!err) moved.push('전세금 ' + old.amt.toLocaleString() + ' 머니를 ' + money.name(old.tenant) + '에게 돌려줌');
+      }
+      if (!err && tenant && lease === '전세' && amt > 0) {
+        err = money.move(tenant, owner, amt, '[전세금] ' + no + ' ' + name);
+        if (!err) moved.push('전세금 ' + amt.toLocaleString() + ' 머니를 ' + money.name(owner) + '에게 냄');
+      }
+      if (!err && tenant && lease === '월세') {
+        var r1 = _newsPrice(rent, _newsEffects(cc).rent);
+        if (r1 > 0) err = money.move(tenant, owner, r1, '[월세] ' + no + ' ' + name + ' (첫 주)');
+        if (!err) { week = 'W' + _newsWeek(); if (r1 > 0) moved.push('첫 주 월세 ' + r1.toLocaleString() + ' 머니를 ' + money.name(owner) + '에게 냄'); }
+      }
+      if (err) return { success: false, msg: err + '\n저장하지 않았어요. 돈은 그대로예요.' };
+    }
+    var status = !owner ? '매물' : tenant ? '임대중' : '소유';
+    sheet.getRange(row, 3, 1, 10).setValues([[name, type, owner, price, rent, status, tenant, lease, amt, week]]);
+    money.commit();
+    SpreadsheetApp.flush();
+    var who = !owner ? '매물(주인 없음)' : '소유자 ' + names[owner].name + (tenant ? ' · ' + lease + ' ' + names[tenant].name : '');
+    return { success: true, msg: no + ' ' + name + ' 수정 완료! (' + who + ')' + (moved.length ? '\n💸 ' + moved.join('\n💸 ') : '') };
+  } catch (e) {
+    if (e.message.match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
+    return { success: false, msg: e.message };
+  } finally { lock.releaseLock(); }
+}
+
+// 학생 카드끼리 돈 옮기기 (부동산 월세·전세금). move()로 메모리에서 먼저 계산하고 commit()에서 한 번에 적음
+//  잔액이 모자라면 move()가 안내 글을 돌려주고 아무것도 바꾸지 않음
+function _reMoney(ss, cc) {
+  var sheet = getOrCreateStudentsSheet(ss), data = sheet.getDataRange().getValues(), st = {}, rows = [], today = getTodayStr();
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc)
+    st[cleanText(String(data[i][1]))] = { row: i + 1, card: Number(data[i][4]) || 0, name: String(data[i][2] || ''), changed: false };
+  return {
+    name: function (sno) { var s = st[sno]; return s ? sno + '번 ' + s.name : sno + '번'; },
+    move: function (from, to, amt, memo) {
+      var a = st[from], b = st[to];
+      if (!a || !b) return (a ? to : from) + '번 학생을 찾을 수 없어요.';
+      if (a.card < amt) return from + '번 ' + a.name + '의 카드 잔액이 부족해요. (카드 ' + a.card.toLocaleString() + ' / 필요 ' + amt.toLocaleString() + ' 머니)';
+      a.card -= amt; b.card += amt; a.changed = b.changed = true;
+      rows.push([today, cc, from, memo + ' → ' + to + '번 ' + b.name, '', amt, a.card, '부동산']);
+      rows.push([today, cc, to, memo + ' ← ' + from + '번 ' + a.name, amt, '', b.card, '부동산']);
+      return '';
+    },
+    commit: function () {
+      if (!rows.length) return;
+      Object.keys(st).forEach(function (k) { if (st[k].changed) sheet.getRange(st[k].row, 5).setValue(st[k].card); });
+      var t = getOrCreateTransSheet(ss); rows.forEach(function (r) { t.appendRow(r); });
+      try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    }
+  };
+}
+
+// 매주 월세 자동으로 걷기: 이번 주(월요일 기준) 아직 안 낸 월세 세입자 → 소유자 카드
+//  부동산 화면·자리 배치도를 열 때, 학생이 로그인할 때 불림. 잔액이 모자라면 그 주는 못 걷고 다음에 다시 시도
+//  shortcut: 아무도 접속하지 않은 주는 걷지 않고 넘어감(밀린 월세를 한꺼번에 걷지 않음)
+function _collectWeeklyRent(classCode) {
+  var cc = cleanText(classCode), lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return false;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = getOrCreateRealEstateSheet(ss), data = sheet.getDataRange().getValues();
+    var wk = 'W' + _newsWeek(), due = [];
+    for (var j = 1; j < data.length; j++)
+      if (cleanText(data[j][0]) === cc && String(data[j][7]) === '임대중' && String(data[j][9]) === '월세' && String(data[j][8] == null ? '' : data[j][8]) !== '' && String(data[j][11] || '') !== wk) due.push(j);
+    if (!due.length) return false;
+    var money = _reMoney(ss, cc), fx = _newsEffects(cc), paid = 0;
+    due.forEach(function (j) {
+      var amt = _newsPrice(Number(data[j][6]) || 0, fx.rent);
+      if (amt > 0 && money.move(cleanText(String(data[j][8])), cleanText(String(data[j][4])), amt, '[월세] ' + data[j][1] + ' ' + data[j][2])) return;   // 잔액 부족 → 다음에 다시
+      sheet.getRange(j + 1, 12).setValue(wk); paid++;
+    });
+    money.commit();
+    SpreadsheetApp.flush();
+    return paid > 0;
+  } catch (e) { return false; }
+  finally { lock.releaseLock(); }
 }

@@ -329,7 +329,7 @@ function renderList(list){
       // 이름
       '<td><input value="'+esc(s.name)+'" placeholder="이름" id="nm-'+sno+'" style="width:90px;"></td>'+
       // 직업
-      '<td><select id="jb-'+sno+'" style="padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Pretendard,sans-serif;background:var(--surf);">'+jobOptions(s.job)+'</select></td>'+
+      '<td>'+jobPicker(sno, s.job)+'</td>'+
       // 접속코드 (직접 수정 가능)
       '<td><div style="display:flex;align-items:center;gap:4px;">'+
         '<input type="text" id="cd-'+sno+'" value="'+(s.code||'')+'" maxlength="10" '+
@@ -358,6 +358,25 @@ function stuOptLabel(s, withJob){
     '  ·  💳 '+n(s.card)+'  ·  🏦 '+n(s.bank);
 }
 
+// ── 한 학생이 직업을 여러 개 가질 수 있음: 직업 칸에 "경찰서장, 도매상인"처럼 쉼표로 이어서 저장 ──
+var JOB_NAMES=['대통령','은행청장','국세청장','신용등급관리위원장','재산조사국장','부동산 중개인','통계청장','도매상인','경찰서장','증권회사'];
+function jobsOf(job){ return String(job||'').split(/\s*,\s*/).filter(Boolean); }
+function hasJob(job, name){ return jobsOf(job).indexOf(name)!==-1; }
+// 직업별 급여를 모두 더함 (직업이 없으면 국민 급여)
+function jobSalary(job){
+  var js=jobsOf(job); if(!js.length) js=['국민'];
+  return js.reduce(function(sum,j){ return sum+(_salaryTable[j]||_salaryTable['국민']||0); },0);
+}
+function jobPicker(sno, job){
+  var mine=jobsOf(job), all=JOB_NAMES.concat(mine.filter(function(j){ return JOB_NAMES.indexOf(j)===-1; }));
+  return '<details class="jb-pick"><summary id="jbs-'+sno+'">'+esc(mine.join(', ')||'국민')+'</summary><div class="jb-menu">'+
+    all.map(function(j){ return '<label><input type="checkbox" value="'+esc(j)+'"'+(mine.indexOf(j)!==-1?' checked':'')+' onchange="jobPicked(\''+sno+'\')"> '+esc(j)+'</label>'; }).join('')+
+    '<div class="jb-hint">아무것도 고르지 않으면 국민</div></div><input type="hidden" id="jb-'+sno+'" value="'+esc(mine.join(', '))+'"></details>';
+}
+function jobPicked(sno){
+  var box=$('jb-'+sno).parentNode, v=[].map.call(box.querySelectorAll('input[type=checkbox]:checked'),function(c){ return c.value; }).join(', ');
+  $('jb-'+sno).value=v; $('jbs-'+sno).textContent=v||'국민';
+}
 function jobOptions(selected){
   var jobs=['','대통령','은행청장','국세청장','신용등급관리위원장','재산조사국장','부동산 중개인','통계청장','도매상인','경찰서장','증권회사'];
   var labels={'':'국민','대통령':'대통령','은행청장':'은행청장','국세청장':'국세청장','신용등급관리위원장':'신용등급관리위원장','재산조사국장':'재산조사국장','부동산 중개인':'부동산 중개인','통계청장':'통계청장','도매상인':'도매상인','경찰서장':'경찰서장','증권회사':'증권회사'};
@@ -469,6 +488,7 @@ function loadBankSettings(){
         $('rate-news-note').innerHTML='📰 <b>뉴스룸 속보가 발효 중</b>이에요('+(r.newsPct>0?'+':'')+r.newsPct+'%). 지금 실제 이자율: 1주 '+r.r1+'% · 2주 '+r.r2+'% · 3주 '+r.r3+'% · 4주 '+r.r4+'%. 아래 칸은 원래 이자율이에요.';
       }
       if($('rate-prime'))$('rate-prime').value=r.prime;
+      if($('rate-prime-min'))$('rate-prime-min').value=(r.primeMin==null?80:r.primeMin);
     }
   }).getBankSettings(targetCC);
 }
@@ -532,10 +552,10 @@ function updateCreditPreviews(){
 }
 
 function saveRates(){
-  var r1=$('rate1').value,r2=$('rate2').value,r3=$('rate3').value,r4=$('rate4').value,prime=$('rate-prime').value;
+  var r1=$('rate1').value,r2=$('rate2').value,r3=$('rate3').value,r4=$('rate4').value,prime=$('rate-prime').value,primeMin=($('rate-prime-min')||{}).value;
   google.script.run.withSuccessHandler(function(r){
     showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);
-  }).setBankSettings(_adminCC,r1,r2,r3,r4,prime);
+  }).setBankSettings(_adminCC,r1,r2,r3,r4,prime,primeMin);
 }
 
 // ============================================================
@@ -1140,7 +1160,7 @@ var _jobTiles=[
 function renderStudentTiles(){
   var grid=$('student-tile-grid'); var html='';
   _jobTiles.forEach(function(j){
-    var isUnlocked=(_isTeacher||j.jobs[0]==='__ALL__'||j.jobs.indexOf(_myJob)!==-1);
+    var isUnlocked=(_isTeacher||j.jobs[0]==='__ALL__'||jobsOf(_myJob).some(function(x){ return j.jobs.indexOf(x)!==-1; }));
     var lockClass=isUnlocked?'':'locked';
     var lockIcon=isUnlocked?'<div class="tile-dot"></div>':'<i class="fa-solid fa-lock lock-icon"></i>';
     var clickAction='';
@@ -1182,7 +1202,7 @@ function openStudentPanel(viewId){
 }
 
 function openBank(){
-  var isBanker = (_myJob==='은행청장' || _isTeacher);
+  var isBanker = (hasJob(_myJob,'은행청장') || _isTeacher);
   
   $('bank-citizen-panel').style.display = isBanker ? 'none' : 'block';
   $('bank-banker-panel').style.display  = isBanker ? 'block' : 'none';
@@ -1385,10 +1405,12 @@ function fillDepositCustomers(first){
   google.script.run.withSuccessHandler(function(r){
     if(!r||!r.success)return;
     sel.innerHTML='<option value="">-- 학생을 선택하세요 --</option>';
+    _depStus=r.list;
     r.list.forEach(function(s){
       var o=document.createElement('option');o.value=s.studentNo;
-      o.textContent=stuOptLabel(s);sel.appendChild(o);
+      o.textContent=stuOptLabel(s)+'  ·  ⭐ 신용 '+(Number(s.credit)||0)+'점'+(isPrimeCredit(s.credit)?' 👑':'');sel.appendChild(o);
     });
+    renderPrimeList(); calculatePreview();
     if(keep&&r.list.some(function(s){return String(s.studentNo)===String(keep);}))sel.value=keep;
   }).getStudentList(_cc||_adminCC);
 }
@@ -1401,10 +1423,11 @@ function initBankDashboard(){
   google.script.run.withSuccessHandler(function(r){
     if(r.success){
       depositInterestRates={1:r.r1,2:r.r2,3:r.r3,4:r.r4};
-      primeInterestRate=r.prime;
+      primeInterestRate=r.prime; primeMinCredit=(r.primeMin==null?80:Number(r.primeMin));
+      fillDepositCustomers(false);
       var info=$('banker-rates-info');
       if(info){
-        info.innerHTML='📊 <b>현재 이자율:</b> 1주 <span style="color:var(--green)">'+r.r1+'%</span> | 2주 <span style="color:var(--green)">'+r.r2+'%</span> | 3주 <span style="color:var(--green)">'+r.r3+'%</span> | 4주 <span style="color:var(--green)">'+r.r4+'%</span>'+newsMark(r.newsPct)+'<br>👑 <b>우대 금리:</b> 기본 이자율 + <span style="color:var(--orange)">'+r.prime+'%</span>';
+        info.innerHTML='📊 <b>현재 이자율:</b> 1주 <span style="color:var(--green)">'+r.r1+'%</span> | 2주 <span style="color:var(--green)">'+r.r2+'%</span> | 3주 <span style="color:var(--green)">'+r.r3+'%</span> | 4주 <span style="color:var(--green)">'+r.r4+'%</span>'+newsMark(r.newsPct)+'<br>👑 <b>우대 금리:</b> 신용점수 <b>'+primeMinCredit+'점 이상</b>이면 자동으로 기본 이자율 + <span style="color:var(--orange)">'+r.prime+'%</span>';
       }
        loadAndShowCreditInBanker(currentCode);
     }
@@ -1432,10 +1455,32 @@ function loadAndShowCreditInBanker(targetCC){
     .getDepositCreditSettings(targetCC);
 }
 
+// ── 우대 금리: 선생님이 정한 신용점수 이상이면 자동 (서버 Code.gs _depositRate와 같은 규칙) ──
+var primeMinCredit=80, _depStus=[];
+function isPrimeCredit(c){ return primeInterestRate>0 && (Number(c)||0)>=primeMinCredit; }
+function depCustomerCredit(){ var v=($('deposit-customer')||{}).value, s=_depStus.find(function(x){ return String(x.studentNo)===String(v); }); return s?(Number(s.credit)||0):null; }
+function renderPrimeList(){
+  var box=$('banker-prime-list'); if(!box) return;
+  var list=_depStus.filter(function(s){ return String(s.studentNo)!=='0' && isPrimeCredit(s.credit); })
+    .sort(function(a,b){ return (Number(b.credit)||0)-(Number(a.credit)||0); });
+  box.innerHTML='<div class="dp-pl-title">👑 지금 우대 금리 대상자 <span>(신용점수 '+primeMinCredit+'점 이상 · '+list.length+'명)</span></div>'+
+    (list.length?'<div class="dp-pl-chips">'+list.map(function(s){ return '<span class="dp-pl-chip">'+esc(s.studentNo)+'번 '+esc(s.name||'')+' <b>⭐ '+(Number(s.credit)||0)+'점</b></span>'; }).join('')+'</div>'
+      :'<div class="dp-pl-none">아직 기준을 넘은 학생이 없어요.</div>');
+}
+function renderPrimeBox(){
+  var box=$('deposit-prime-box'); if(!box) return;
+  var c=depCustomerCredit();
+  if(c===null){ box.className='dp-prime'; box.innerHTML='👑 고객을 고르면 신용점수와 우대 금리 대상인지 보여요.'; return; }
+  var ok=isPrimeCredit(c);
+  box.className='dp-prime '+(ok?'yes':'no');
+  box.innerHTML=ok?'⭐ 신용점수 <b>'+c+'점</b> → 👑 <b>우대 금리 대상자</b>예요! (+'+primeInterestRate+'% 자동 적용)'
+    :'⭐ 신용점수 <b>'+c+'점</b> → 우대 금리 대상이 아니에요. ('+primeMinCredit+'점 이상부터, '+(primeMinCredit-c)+'점 더 필요)';
+}
 function calculatePreview(){
+  renderPrimeBox();
   var amount=parseInt($('deposit-amount').value)||0;
   var period=$('deposit-period').value;
-  var isPrime=$('deposit-prime-rate').checked;
+  var c=depCustomerCredit(), isPrime=c!==null && isPrimeCredit(c);
   var previewBox=$('deposit-preview-box');
   if(amount>0){
     previewBox.style.display='block';
@@ -1461,7 +1506,7 @@ async function saveNewDeposit(){
   var period    = $('deposit-period').value;
   var amount    = parseInt($('deposit-amount').value);
   var startDate = $('deposit-start-date').value;
-  var isPrime   = $('deposit-prime-rate').checked;
+  var c         = depCustomerCredit(), isPrime = c!==null && isPrimeCredit(c);
 
   if(!amount || !startDate) return alert('금액과 날짜를 정확히 입력해주세요.');
 
@@ -1475,7 +1520,7 @@ async function saveNewDeposit(){
   if(!await uiConfirm(
   '예금을 등록하시겠습니까?\n\n' +
   '고객: ' + customerEl.options[customerEl.selectedIndex].text + '\n' +
-  '기간: ' + period + '주 / 이율: ' + finalRate + '%\n' +
+  '기간: ' + period + '주 / 이율: ' + finalRate + '%' + (isPrime ? ' (👑 우대 금리 포함, 신용 ' + c + '점)' : '') + '\n' +
   '금액: ' + amount.toLocaleString() + ' 머니\n' +
   '⭐ 만기 해지 시 신용점수 +' + creditGainPreview + '점 자동 부여'
 )) return;
@@ -1487,7 +1532,6 @@ async function saveNewDeposit(){
       if(r.success){
         showToast('✅ ' + r.msg);
         $('deposit-amount').value = '';
-        $('deposit-prime-rate').checked = false;
         $('deposit-preview-box').style.display = 'none';
         loadAllDeposits();
       } else {
@@ -2241,15 +2285,17 @@ function realtorTab(id,el){
 function loadRealEstate(){
   google.script.run.withSuccessHandler(function(r){
     var tb=$('re-tbody');
-    if(!r.success||!r.list.length){tb.innerHTML='<tr><td colspan="8" class="empty-msg">등록된 매물이 없습니다.</td></tr>';return;}
-    var h='';
+    if(!r.success||!r.list.length){tb.innerHTML='<tr><td colspan="9" class="empty-msg">등록된 매물이 없습니다.</td></tr>';return;}
+    _reList=r.list;
+    var h='', canEdit=reCanEdit();
     r.list.forEach(function(re){
       var canBuy=(re.status==='매물');
       h+='<tr><td>'+esc(re.assetNo)+'</td><td><strong>'+esc(re.name)+'</strong></td><td>'+esc(re.type)+'</td>'+
-        '<td>'+esc(re.ownerName||'국가')+'</td><td><strong>'+Number(re.price).toLocaleString()+'</strong>'+(re.price!==re.basePrice?' <span class="nw-mark">📰 원래 '+re.basePrice.toLocaleString()+'</span>':'')+'</td>'+
+        '<td>'+(re.tenantNo?'<strong>🪑 '+esc(re.tenantName)+'</strong> <span class="re-lease">'+esc(re.leaseType)+'</span><div class="re-owner-sm">소유자('+esc(re.ownerName)+')</div>':esc(re.ownerName||'국가'))+'</td><td><strong>'+Number(re.price).toLocaleString()+'</strong>'+(re.price!==re.basePrice?' <span class="nw-mark">📰 원래 '+re.basePrice.toLocaleString()+'</span>':'')+'</td>'+
         '<td>'+Number(re.rent).toLocaleString()+(re.rent!==re.baseRent?' <span class="nw-mark">📰 원래 '+re.baseRent.toLocaleString()+'</span>':'')+'</td>'+
         '<td><span style="color:'+(re.status==='매물'?'var(--green)':'var(--gray)')+';font-weight:600;">'+esc(re.status)+'</span></td>'+
-        '<td>'+(canBuy&&_myJob!=='부동산 중개인'?'<button class="btn btn-sm btn-green" onclick="doBuyRE(\''+re.assetNo+'\')"><i class="fa-solid fa-cart-shopping"></i> 구매</button>':'<span style="font-size:12px;color:var(--gray);">'+(re.status==='소유'?'소유됨':'중개인')+'</span>')+'</td></tr>';
+        '<td>'+(canBuy&&!hasJob(_myJob,'부동산 중개인')?'<button class="btn btn-sm btn-green" onclick="doBuyRE(\''+re.assetNo+'\')"><i class="fa-solid fa-cart-shopping"></i> 구매</button>':'<span style="font-size:12px;color:var(--gray);">'+(re.status==='매물'?'중개인':re.status==='임대중'?'임대중':'소유됨')+'</span>')+'</td>'+
+        '<td>'+(canEdit?'<button class="btn btn-sm btn-outline" onclick="reEditOpen(\''+esc(String(re.assetNo))+'\')"><i class="fa-solid fa-pen"></i> 수정</button>':'')+'</td></tr>';
     });
     tb.innerHTML=h;
   }).getRealEstateList(_cc||_adminCC);
@@ -2262,6 +2308,86 @@ function doAddRealEstate(){
     showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);
     if(r.success){$('re-no').value='';$('re-name').value='';$('re-price').value='';$('re-perk').value='';loadRealEstate();if(typeof loadSeatMap==='function')loadSeatMap();}
   }).addRealEstate(_cc||_adminCC,no,name,type,price,rent,perk);
+}
+
+// ── 매물 수정 창 (선생님 · 부동산 중개인). 자리 배치도(seatmap.js)에서도 엶 ──
+var _reList=[];
+function reCanEdit(){ return _isTeacher || hasJob(_myJob,'부동산 중개인'); }
+function reEditOpen(assetNo){
+  var cc=_cc||_adminCC;
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    google.script.run.withSuccessHandler(function(s){
+      hideLoading();
+      if(!r.success) return alert(r.msg);
+      _reList=r.list;
+      var re=r.list.find(function(x){ return String(x.assetNo)===String(assetNo); });
+      if(!re) return alert('매물을 찾을 수 없어요.');
+      reEditShow(re, (s&&s.success)?s.list:[]);
+    }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); }).getStudentList(cc);
+  }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); }).getRealEstateList(cc);
+}
+function reEditShow(re, stus){
+  var stuOpts=function(sel, none){ return '<option value="">'+none+'</option>'+stus.map(function(s){ var v=String(s.studentNo); return '<option value="'+esc(v)+'"'+(v===String(sel||'')?' selected':'')+'>'+esc(v)+'번 '+esc(s.name||'')+'</option>'; }).join(''); };
+  var types=['사물함','자리','기타']; if(types.indexOf(re.type)===-1) types.push(re.type);
+  var owner=re.status==='매물'?'':re.ownerNo;
+  var h='<div class="sm-pop-card re-ed"><button class="sm-pop-x" onclick="reEditClose()">✕</button>'+
+    '<div class="sm-pop-head"><span class="sm-pop-no">'+esc(re.assetNo)+'</span><h3>✏️ 매물 수정</h3></div>'+
+    '<div class="re-ed-grid">'+
+    '<label>자산 이름<input id="ree-name" maxlength="40" value="'+esc(re.name)+'"></label>'+
+    '<label>종류<select id="ree-type">'+types.map(function(t){ return '<option'+(t===re.type?' selected':'')+'>'+esc(t)+'</option>'; }).join('')+'</select></label>'+
+    '<label>매매 가격 (머니)<input id="ree-price" type="number" min="0" value="'+re.basePrice+'"></label>'+
+    '<label>임대료/주 (머니)<input id="ree-rent" type="number" min="0" value="'+re.baseRent+'"></label>'+
+    '</div>'+
+    (re.price!==re.basePrice||re.rent!==re.baseRent?'<div class="re-ed-note">📰 뉴스 때문에 지금은 '+Number(re.price).toLocaleString()+' / '+Number(re.rent).toLocaleString()+' 머니로 보여요. 여기에는 원래 가격을 적어요.</div>':'')+
+    '<div class="re-ed-sec">👑 소유자</div>'+
+    '<select id="ree-owner" onchange="reEditSync()">'+stuOpts(owner,'없음 (매물로 내놓기)')+'</select>'+
+    '<div id="ree-lease-box"><div class="re-ed-sec">🪑 세입자 (월세·전세로 앉은 학생)</div>'+
+    '<div class="re-ed-grid">'+
+    '<label>방식<select id="ree-lease" onchange="reEditSync()"><option value="">세입자 없음</option><option'+(re.leaseType==='월세'?' selected':'')+'>월세</option><option'+(re.leaseType==='전세'?' selected':'')+'>전세</option></select></label>'+
+    '<label>세입자<select id="ree-tenant">'+stuOpts(re.tenantNo,'-- 학생 선택 --')+'</select></label>'+
+    '<label id="ree-amt-box">전세금 (머니)<input id="ree-amt" type="number" min="0" value="'+(re.leaseAmt||0)+'"></label>'+
+    '</div></div>'+
+    '<div class="re-ed-note">💸 세입자를 새로 정하면 <b>월세 첫 주치</b>(전세면 <b>전세금</b>)가 세입자 카드에서 소유자 카드로 바로 옮겨 가요. 전세가 끝나면 전세금이 세입자에게 돌아가요. 월세는 <b>매주 자동으로</b> 걷혀요.<br>이름·가격만 고치면 돈은 그대로예요. 매물 구매 금액은 이 창에서 주고받지 않아요.</div>'+
+    '<div class="sm-pop-btns"><button class="btn btn-outline" onclick="reEditClose()">취소</button><button class="btn btn-green" onclick="reEditSave(\''+esc(String(re.assetNo))+'\')"><i class="fa-solid fa-floppy-disk"></i> 저장</button></div></div>';
+  var pop=$('re-ed-pop');
+  if(!pop){ pop=document.createElement('div'); pop.id='re-ed-pop'; pop.className='sm-pop'; document.body.appendChild(pop);
+    pop.addEventListener('click',function(e){ if(e.target===pop) reEditClose(); }); }
+  pop.innerHTML=h; pop.classList.add('show'); reEditSync();
+  _reEditing=re;
+}
+var _reEditing=null;
+function reEditSync(){
+  var hasOwner=!!$('ree-owner').value, lease=$('ree-lease').value;
+  $('ree-lease-box').style.display=hasOwner?'':'none';
+  $('ree-tenant').disabled=!lease;
+  $('ree-amt-box').style.display=lease==='전세'?'':'none';
+}
+function reEditClose(){ var p=$('re-ed-pop'); if(p) p.classList.remove('show'); }
+async function reEditSave(assetNo){
+  var lease=$('ree-lease').value, owner=$('ree-owner').value;
+  var d={ name:$('ree-name').value, type:$('ree-type').value, price:$('ree-price').value, rent:$('ree-rent').value,
+          ownerNo:owner, leaseType:owner?lease:'', tenantNo:(owner&&lease)?$('ree-tenant').value:'', leaseAmt:$('ree-amt').value };
+  if(d.leaseType&&!d.tenantNo) return alert('세입자를 골라 주세요.');
+  // 돈이 움직이는 경우 미리 알려 주기 (서버와 같은 규칙)
+  var o=_reEditing||{}, oT=o.status==='임대중'?String(o.tenantNo||''):'', oOwner=o.status==='매물'?'':String(o.ownerNo||'');
+  var amt=Math.round(Number(d.leaseAmt)||0);
+  var same=oT && oT===d.tenantNo && oOwner===d.ownerNo && o.leaseType===d.leaseType && (d.leaseType!=='전세'||Number(o.leaseAmt)===amt);
+  var moves=[];
+  if(!same){
+    if(oT && o.leaseType==='전세' && o.leaseAmt>0) moves.push('전세금 '+Number(o.leaseAmt).toLocaleString()+' 머니: 소유자 → '+oT+'번 세입자에게 돌려줘요');
+    if(d.tenantNo && d.leaseType==='전세' && amt>0) moves.push('전세금 '+amt.toLocaleString()+' 머니: '+d.tenantNo+'번 세입자 → 소유자');
+    if(d.tenantNo && d.leaseType==='월세') moves.push('첫 주 월세: '+d.tenantNo+'번 세입자 → 소유자 (그다음부터는 매주 자동)');
+  }
+  if(moves.length && !await uiConfirm('💸 저장하면 돈이 움직여요\n\n'+moves.join('\n')+'\n\n저장할까요?')) return;
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    hideLoading();
+    if(!r.success) return alert(r.msg);
+    showToast('✅ '+r.msg); reEditClose(); loadRealEstate();
+    if(typeof loadSeatMap==='function' && $('sm-box')) loadSeatMap();
+  }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); })
+  .editRealEstate(_cc||_adminCC, assetNo, d, _isTeacher===true, _sno||'');
 }
 
 async function doBuyRE(assetNo){
@@ -3985,7 +4111,7 @@ function renderSmartPayrollTable(){
   // ── Body: 학생 행 ──
   h+='<tbody>';
   _payrollList.forEach(function(s,idx){
-    var base=_salaryTable[s.job||'국민']||_salaryTable['국민']||0;
+    var base=jobSalary(s.job);
     var netCalc=base;
     var isZero = String(s.studentNo)==='0';
     h+='<tr data-sno="'+esc(s.studentNo)+'" style="border-bottom:1px solid #F1F5F9;" onmouseover="this.style.background=\'#FAFBFF\'" onmouseout="this.style.background=\'white\'">';
@@ -4068,7 +4194,7 @@ function applyHobongTable(){
     return;
   }
   _payrollList.forEach(function(s,idx){
-    var salary=_salaryTable[s.job||'국민']||_salaryTable['국민']||0;
+    var salary=jobSalary(s.job);
     var el=$('sp-base-'+idx);
     if(el){ el.value=salary; onBaseChange(idx); }
   });

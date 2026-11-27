@@ -536,7 +536,10 @@
       <div style="margin-top:15px;background:#FFFBEB;padding:15px;border-radius:12px;border:1px solid #FDE68A;display:flex;align-items:center;gap:15px;margin-bottom:15px;">
         <div style="font-family:'Jua',sans-serif;font-size:18px;color:#D97706;">👑 우대 금리 추가율</div>
         <input id="rate-prime" type="number" value="2" min="0" max="100" style="width:80px;padding:8px;border:2px solid #FDE68A;border-radius:8px;font-size:16px;font-weight:bold;text-align:center;">
-        <div style="font-size:14px;color:#92400E;">% (대상자에게 추가로 붙는 이율)</div>
+        <div style="font-size:14px;color:#92400E;">% 추가 ·</div>
+        <div style="font-size:14px;color:#92400E;">신용점수</div>
+        <input id="rate-prime-min" type="number" value="80" min="0" max="100" style="width:80px;padding:8px;border:2px solid #FDE68A;border-radius:8px;font-size:16px;font-weight:bold;text-align:center;">
+        <div style="font-size:14px;color:#92400E;">점 이상이면 <b>자동으로</b> 우대 금리 적용</div>
       </div>
       <button class="btn btn-blue" style="gap:8px;" onclick="saveRates()"><i class="fa-solid fa-floppy-disk"></i> 이자율 저장</button>
     </div>
@@ -1234,9 +1237,10 @@
           <div id="banker-rates-info" style="background:#f8f9fa;border-left:4px solid var(--purple);padding:10px 15px;margin-bottom:15px;border-radius:8px;font-size:13px;color:#444;">
             이자율 정보를 불러오는 중입니다...
           </div>
+          <div id="banker-prime-list" class="dp-prime-list"></div>
           <div style="margin-bottom:15px;">
             <label style="font-size:13px;font-weight:bold;">👤 고객 선택</label>
-            <select id="deposit-customer" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border);margin-top:5px;">
+            <select id="deposit-customer" onchange="calculatePreview()" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border);margin-top:5px;">
               <option value="">학생을 먼저 선택하세요</option>
             </select>
           </div>
@@ -1248,10 +1252,7 @@
             </select>
           </div>
           <div style="margin-bottom:15px;">
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:bold;cursor:pointer;color:#d63384;">
-              <input type="checkbox" id="deposit-prime-rate" onchange="calculatePreview()" style="width:18px;height:18px;cursor:pointer;">
-              👑 우대 금리 대상자 (교사 지정 추가 이율 적용)
-            </label>
+            <div id="deposit-prime-box" class="dp-prime">👑 고객을 고르면 신용점수와 우대 금리 대상인지 보여요.</div>
           </div>
           <div style="margin-bottom:15px;">
             <label style="font-size:13px;font-weight:bold;">💰 금액 (머니)</label>
@@ -1528,8 +1529,8 @@
           </div>
           <div class="stw">
             <table class="stb">
-              <thead><tr><th>번호</th><th>자산명</th><th>종류</th><th>소유자</th><th>가격</th><th>임대료/주</th><th>상태</th><th>구매</th></tr></thead>
-              <tbody id="re-tbody"><tr><td colspan="8" class="empty-msg">새로고침을 눌러주세요.</td></tr></tbody>
+              <thead><tr><th>번호</th><th>자산명</th><th>종류</th><th>소유자</th><th>가격</th><th>임대료/주</th><th>상태</th><th>구매</th><th>수정</th></tr></thead>
+              <tbody id="re-tbody"><tr><td colspan="9" class="empty-msg">새로고침을 눌러주세요.</td></tr></tbody>
             </table>
           </div>
         </div>

@@ -71,15 +71,16 @@
         '<span>' + KIND[it.kind].label + '</span>' + (edit ? '<b class="sm-x" data-del="' + i + '" title="빼기">✕</b>' : '') + '</div>';
     });
     map.seats.forEach(function (s, i) {
-      var sale = s.status === '매물';
-      h += '<div class="sm-seat ' + (sale ? 'sale' : 'owned') + '" data-type="seat" data-i="' + i + '" style="left:' + s.x + '%;top:' + s.y + '%">' +
+      var sale = s.status === '매물', leased = !sale && !!s.tenantNo;
+      h += '<div class="sm-seat ' + (sale ? 'sale' : leased ? 'owned leased' : 'owned') + '" data-type="seat" data-i="' + i + '" style="left:' + s.x + '%;top:' + s.y + '%">' +
         '<div class="sm-desk">' + (s.perk ? '<i class="sm-star">⭐</i>' : '') + '<b>' + E(s.assetNo) + '</b><span>' + E(s.name) + '</span></div>' +
         '<div class="sm-chair"></div>' +
-        '<div class="sm-tag">' + (sale ? '매물 · ' + won(s.price) : '소유자 ' + E(s.ownerName || '국가')) + '</div></div>';
+        '<div class="sm-tag">' + (sale ? '매물 · ' + won(s.price) : leased ? '🪑 ' + E(s.tenantName) + ' · ' + E(s.leaseType) : '소유자 ' + E(s.ownerName || '국가')) + '</div>' +
+        (leased ? '<div class="sm-tag-owner">소유자(' + E(s.ownerName) + ')</div>' : '') + '</div>';
     });
     h += '</div></div>';
     if (!map.seats.length) h += '<div class="sm-empty">아직 "자리" 매물이 없어요. 아래에서 종류를 <b>자리</b>로 골라 등록하면 교실에 책상이 생겨요.</div>';
-    h += '<div class="sm-legend"><span><i class="lg sale"></i> 살 수 있는 자리</span><span><i class="lg owned"></i> 주인이 있는 자리</span><span>⭐ 혜택이 있는 자리</span></div>';
+    h += '<div class="sm-legend"><span><i class="lg sale"></i> 살 수 있는 자리</span><span><i class="lg owned"></i> 주인이 있는 자리</span><span><i class="lg leased"></i> 월세·전세로 앉은 자리</span><span>⭐ 혜택이 있는 자리</span></div>';
     box.innerHTML = h;
     bind();
   }
@@ -144,7 +145,11 @@
       '<span class="sm-pop-st ' + (sale ? 'sale' : 'owned') + '">' + (sale ? '살 수 있어요' : '주인이 있어요') + '</span></div>' +
       '<div class="sm-pop-rows"><div><span>매매 가격</span><b>' + won(s.price) + '</b></div>' +
       '<div><span>임대료/주</span><b>' + (s.rent ? won(s.rent) : '임대 안 함') + '</b></div>' +
-      '<div><span>소유자</span><b>' + (sale ? '없음 (매물)' : E(s.ownerName || '국가')) + '</b></div></div>' +
+      '<div><span>소유자</span><b>' + (sale ? '없음 (매물)' : E(s.ownerName || '국가')) + '</b></div>' +
+      (!sale && s.tenantNo ? '<div><span>세입자 (' + E(s.leaseType) + ')</span><b>🪑 ' + E(s.tenantName) + (s.leaseType === '전세' && s.leaseAmt ? ' · 전세금 ' + won(s.leaseAmt) : '') + '</b></div>' +
+        (s.leaseType === '월세' ? '<div><span>이번 주 월세</span><b>' + (s.rentPaid ? '✅ 냈어요' : '⏳ 아직 (카드 잔액이 모자라요)') + '</b></div>' : '') : '') +
+      '</div>' +
+      (typeof reCanEdit === 'function' && reCanEdit() ? '<button class="btn btn-sm btn-outline sm-pop-edit" onclick="seatClose();reEditOpen(\'' + E(s.assetNo) + '\')"><i class="fa-solid fa-pen"></i> 이름·가격·소유자·세입자 수정</button>' : '') +
       '<div class="sm-pop-perk"><div class="sm-pop-lb">⭐ 이 자리의 혜택</div>';
     if (t) h += '<textarea id="sm-perk" maxlength="120" placeholder="예: 급식 먼저 먹기, 창가라 햇빛이 잘 들어요">' + E(s.perk) + '</textarea>' +
       '<div class="sm-pop-btns"><span class="sm-pop-cnt">120자까지</span><button class="btn btn-green" onclick="seatPerkSave(' + i + ')"><i class="fa-solid fa-floppy-disk"></i> 혜택 저장</button></div>';

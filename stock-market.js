@@ -136,21 +136,25 @@
     var PADX = opt.full ? 4 : 7, PADT = 10, PADB = 10;         // % (양 끝 날짜 글자가 잘리지 않게 여유)
     var X = function (i) { return PADX + i / (n - 1) * (100 - PADX * 2); };
     var Y = function (v) { return PADT + (1 - (v - min) / span) * (100 - PADT - PADB); };
-    var up = vals[n - 1] >= vals[0];
-    var color = up ? '#E11D48' : '#2563EB';
+    // 색: 시작 가격과 비교하지 않고, 바로 앞 가격보다 오르면 빨강 · 내리면 파랑 · 같으면 회색 (구간마다)
+    var mv = function (i) { return i < 1 ? 0 : vals[i] - vals[i - 1]; };
+    var colorOf = function (d) { return d > 0 ? '#E11D48' : d < 0 ? '#2563EB' : '#94A3B8'; };
     var line = pts.map(function (x, i) { return (X(i) * 10).toFixed(1) + ',' + (Y(x.p) * 10).toFixed(1); });
     var area = (X(0) * 10).toFixed(1) + ',1000 ' + line.join(' ') + ' ' + (X(n - 1) * 10).toFixed(1) + ',1000';
     var h = '<div class="stkc ' + (opt.full ? 'stkc-full' : 'stkc-card') + '">';
     h += '<div class="stkc-plot">';
     h += '<svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">' +
-      '<polygon points="' + area + '" fill="' + color + '" fill-opacity=".10"/>' +
-      '<polyline points="' + line.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="' + (opt.full ? 3 : 2.5) + '" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/></svg>';
-    // 점 (마우스를 올리면 날짜·가격)
+      '<polygon points="' + area + '" fill="#94A3B8" fill-opacity=".10"/>';
+    for (var si = 1; si < n; si++) {
+      h += '<polyline points="' + line[si - 1] + ' ' + line[si] + '" fill="none" stroke="' + colorOf(mv(si)) + '" stroke-width="' + (opt.full ? 3 : 2.5) + '" vector-effect="non-scaling-stroke" stroke-linecap="round"/>';
+    }
+    h += '</svg>';
+    // 점 (마우스를 올리면 날짜·가격). 점 색 = 그 점까지 오른/내린 색
     var showDots = opt.full ? n <= 60 : true;
     pts.forEach(function (x, i) {
       var last = i === n - 1;
       if (!showDots && !last) return;
-      h += '<span class="stkc-dot' + (last ? ' last' : '') + '" style="left:' + X(i).toFixed(2) + '%;top:' + Y(x.p).toFixed(2) + '%;border-color:' + color + '" title="' +
+      h += '<span class="stkc-dot' + (last ? ' last' : '') + '" style="left:' + X(i).toFixed(2) + '%;top:' + Y(x.p).toFixed(2) + '%;border-color:' + colorOf(mv(i)) + '" title="' +
         (x.t ? whenFull(x.t) + ' · ' : '') + x.p.toLocaleString() + '"></span>';
     });
     if (opt.full) {
@@ -244,10 +248,13 @@
     if (!arr || arr.length < 2) return '';
     var w = 220, h = 54, min = Math.min.apply(null, arr), max = Math.max.apply(null, arr), span = (max - min) || 1;
     var pts = arr.map(function (v, i) { return (i / (arr.length - 1) * w).toFixed(1) + ',' + (h - 4 - (v - min) / span * (h - 8)).toFixed(1); });
-    var color = up ? '#E11D48' : '#2563EB';
-    return '<svg class="stk-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">' +
-      '<polyline points="0,' + h + ' ' + pts.join(' ') + ' ' + w + ',' + h + '" fill="' + color + '" fill-opacity=".10" stroke="none"/>' +
-      '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+    var s = '<svg class="stk-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<polyline points="0,' + h + ' ' + pts.join(' ') + ' ' + w + ',' + h + '" fill="#94A3B8" fill-opacity=".10" stroke="none"/>';
+    for (var i = 1; i < arr.length; i++) {   // 구간마다: 오르면 빨강, 내리면 파랑
+      var d = arr[i] - arr[i - 1];
+      s += '<polyline points="' + pts[i - 1] + ' ' + pts[i] + '" fill="none" stroke="' + (d > 0 ? '#E11D48' : d < 0 ? '#2563EB' : '#94A3B8') + '" stroke-width="2.5" stroke-linecap="round"/>';
+    }
+    return s + '</svg>';
   }
 
   function renderCards(animate) {
