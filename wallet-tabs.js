@@ -34,9 +34,9 @@
   };
 
   // 선생님이 다른 학생을 고르면 지금 탭을 새로 불러옴 (app.js walletTeacherPick에서 부름)
-  window.walletTabRefresh = function () { if (current !== 'wt-book') loadTab(current); else refreshSnackBadge(); };
+  window.walletTabRefresh = function () { couponBadge(); if (current !== 'wt-book') loadTab(current); else refreshSnackBadge(); };
   // 용돈기입장을 열 때 (app.js initWalletPanel에서 부름)
-  window.walletTabsReset = function () { walletTab('wt-book'); refreshSnackBadge(); };
+  window.walletTabsReset = function () { walletTab('wt-book'); refreshSnackBadge(); couponBadge(); };
 
   function loadTab(id) {
     if (id === 'wt-hw') loadHomework();
@@ -45,6 +45,8 @@
     else if (id === 'wt-law') loadLaw();
     else if (id === 'wt-stock') { loadStock(true); startStockTimer(); }
     else if (id === 'wt-seat') { if (typeof loadSeatMap === 'function') loadSeatMap('wt-seat-box'); }
+    else if (id === 'wt-donate') loadDonate();
+    else if (id === 'wt-hof') loadHof();
   }
 
   // ======================================================================
@@ -334,8 +336,54 @@
   // ======================================================================
   // 🏪 매점 시세표
   // ======================================================================
+  // ── 🎟️ 신용 구제 쿠폰 (매점 상품) — 서버 getCouponInfo · buyCreditCoupon ──
+  //  쿠폰 사용 여부는 본인(과 선생님)만 봄: 내 정보만 받아 옴
+  var coupon = null;
+  function couponBadge(r) {
+    var b = $('s-coupon-badge'); if (!b) return;
+    var show = function (x) {
+      if (x && x.success && x.active) { b.style.display = ''; b.innerHTML = '🎟️ 점수 ' + x.active.mult + '배 적용 중 · ' + x.active.daysLeft + '일 남음'; }
+      else { b.style.display = 'none'; b.innerHTML = ''; }
+    };
+    if (r) return show(r);
+    var sno = target(); if (!sno || !cc()) return show(null);
+    google.script.run.withSuccessHandler(show).getCouponInfo(cc(), sno);
+  }
+  function loadCoupon() {
+    var box = $('wt-coupon'), sno = target(); if (!box) return;
+    if (!sno) { box.innerHTML = ''; return; }
+    google.script.run.withSuccessHandler(function (r) {
+      coupon = r; couponBadge(r);
+      if (!r || !r.success || (!r.cfg.on && !r.active)) { box.innerHTML = ''; return; }
+      var c = r.cfg, a = r.active, h = '<div class="cp-card' + (a ? ' on' : '') + '"><div class="cp-ic">🎟️</div><div class="cp-body">' +
+        '<div class="cp-t">신용 구제 쿠폰 <span class="cp-price">' + won(c.price) + '</span></div>' +
+        (a ? '<div class="cp-d">내 쿠폰: 신용 점수가 <b>오를 때마다 ' + a.mult + '배</b>로 받고 있어요. (예: 과제 +2점 → +' + (2 * a.mult) + '점) 깎이는 점수는 그대로예요. ' + E(a.boughtAt) + '에 샀어요.</div>'
+           : '<div class="cp-d">산 때부터 <b>' + c.days + '일 동안</b> 신용 점수가 <b>오를 때마다 ' + c.mult + '배</b>로 받아요. (예: 과제 +2점 → +' + (2 * c.mult) + '점) 깎이는 점수는 그대로예요.</div>');
+      if (a) h += '<div class="cp-st on">✨ 점수 ' + a.mult + '배 적용 중! · <b>' + a.daysLeft + '일 남음</b> (' + E(a.expiresAt) + '까지)</div>';
+      else if (r.canBuy) h += '<div class="cp-st ok">지금 살 수 있어요. (신용 점수 ' + r.credit + '점 · ' + c.threshold + '점 미만만 구매 가능)</div>';
+      else h += '<div class="cp-st no">🔒 ' + E(r.reason) + '</div>';
+      h += '</div>' + (a ? '' : '<button class="sb sb-green cp-btn" onclick="couponBuy()"' + (r.canBuy ? '' : ' disabled') + '>구매하기</button>') + '</div>';
+      box.innerHTML = h;
+    }).withFailureHandler(function () { box.innerHTML = ''; }).getCouponInfo(cc(), sno);
+  }
+  window.couponBuy = async function () {
+    var r = coupon, sno = target();
+    if (!r || !r.canBuy) return alert((r && r.reason) || '지금은 살 수 없어요.');
+    if (!await uiConfirm('🎟️ 신용 구제 쿠폰을 ' + won(r.cfg.price) + '에 살까요?\n\n· ' + r.cfg.days + '일 동안 오르는 신용 점수를 ' + r.cfg.mult + '배로 받아요.\n· 깎이는 점수는 그대로예요.\n· 효과가 끝나기 전에는 다시 살 수 없어요.')) return;
+    if (typeof showLoading === 'function') showLoading();
+    google.script.run.withSuccessHandler(function (res) {
+      if (typeof hideLoading === 'function') hideLoading();
+      if (!res || !res.success) { alert((res && res.msg) || '사지 못했어요.'); return loadCoupon(); }
+      if ($('s-card')) { $('s-card').textContent = Number(res.newCard).toLocaleString() + ' 머니'; if (typeof walletRecalcTotal === 'function') walletRecalcTotal('s'); }
+      if (typeof loadTx === 'function') loadTx(cc(), sno, 's-tx-tbody', 's-tx-cnt');
+      loadCoupon();
+    }).withFailureHandler(function (e) { if (typeof hideLoading === 'function') hideLoading(); alert('오류: ' + e.message); }).buyCreditCoupon(cc(), sno);
+  };
+
   function loadStore() {
-    var box = $('wt-store-box');
+    $('wt-store-box').innerHTML = '<div id="wt-coupon"></div><div id="wt-store-list"></div>';
+    loadCoupon();
+    var box = $('wt-store-list');
     box.innerHTML = '<div class="empty-msg">불러오는 중...</div>';
     google.script.run.withSuccessHandler(function (r) {
       if (!r || !r.success) { box.innerHTML = fail(r && r.msg); return; }
@@ -382,6 +430,104 @@
       motion(box.querySelectorAll('.flaw-item'));
     }).withFailureHandler(function (e) { box.innerHTML = fail(e); }).getFineLaw(cc());
   }
+
+  // ======================================================================
+  // 🏆 명예의 전당 — 달마다 분야별 1~3위 (서버 getHallOfFame). 내 순위도 보여 줌
+  // ======================================================================
+  var hofMonth = '';
+  function ymShift(ym, d) { var p = ym.split('-'), t = new Date(+p[0], +p[1] - 1 + d, 1); return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2); }
+  function loadHof() {
+    var box = $('wt-hof-box');
+    box.innerHTML = '<div class="empty-msg">불러오는 중...</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      if (!r || !r.success) { box.innerHTML = fail(r && r.msg); return; }
+      hofMonth = r.month; renderHof(r);
+    }).withFailureHandler(function (e) { box.innerHTML = fail(e); }).getHallOfFame(cc(), hofMonth);
+  }
+  window.hofGo = function (d) { hofMonth = ymShift(hofMonth, d); loadHof(); };
+  function renderHof(r) {
+    var box = $('wt-hof-box'), me = target(), p = r.month.split('-'), isNow = r.month === r.thisMonth;
+    var medal = ['🥇', '🥈', '🥉'];
+    var h = '<div class="hof-head"><div class="hof-title">🏆 명예의 전당</div>' +
+      '<div class="hof-month"><button class="hof-nav" onclick="hofGo(-1)" aria-label="지난달">◀</button><b>' + (+p[0]) + '년 ' + (+p[1]) + '월</b>' +
+      (isNow ? '<span class="hof-now">이번 달</span>' : '<button class="hof-nav" onclick="hofGo(1)" aria-label="다음 달">▶</button>') + '</div></div>';
+    h += '<div class="hof-grid">';
+    r.cats.forEach(function (c) {
+      var top = c.list.filter(function (x) { return x.rank <= 3; }).slice(0, 5), mine = null;
+      c.list.forEach(function (x) { if (x.no === me) mine = x; });
+      h += '<div class="hof-card hof-' + c.id + '"><div class="hof-ch"><span class="hof-ic">' + c.icon + '</span><div><div class="hof-ct">' + E(c.title) + (c.now ? ' <span class="hof-tag">지금</span>' : '') + '</div><div class="hof-how">' + E(c.how) + '</div></div></div>';
+      if (!top.length) h += '<div class="hof-empty">' + (isNow || c.now ? '아직 주인공이 없어요. 첫 번째 주인공이 되어 보세요!' : '이 달에는 기록이 없어요.') + '</div>';
+      else h += '<ol class="hof-rank">' + top.map(function (x) {
+        return '<li class="r' + x.rank + (x.no === me ? ' me' : '') + '"><span class="hof-md">' + (medal[x.rank - 1] || x.rank + '위') + '</span><span class="hof-nm">' + E(x.name || x.no + '번') +
+          (x.no === me ? ' <i>나</i>' : '') + '</span><span class="hof-val">' + Number(x.value).toLocaleString() + ' ' + c.unit + (c.subUnit && x.sub ? '<small>' + x.sub + c.subUnit + '</small>' : '') + '</span></li>';
+      }).join('') + '</ol>';
+      if (me && me !== '0') h += '<div class="hof-mine">' + (mine ? (mine.rank <= 3 ? '🎉 내가 ' + mine.rank + '위예요!' : '나는 ' + mine.rank + '위 · ' + Number(mine.value).toLocaleString() + ' ' + c.unit) : '나는 아직 기록이 없어요') + '</div>';
+      h += '</div>';
+    });
+    h += '</div><div class="hof-note">💡 "이달의" 순위는 그 달의 기록으로, 자산왕·신용왕은 지금 상태로 정해요. 선생님(0번)은 순위에서 빠져요.</div>';
+    box.innerHTML = h;
+    var cards = box.querySelectorAll('.hof-card');
+    if (typeof anime === 'function' && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches))
+      anime({ targets: cards, translateY: [14, 0], opacity: [0, 1], delay: anime.stagger(60), duration: 420, easing: 'easeOutQuad' });
+    else motion(cards);
+  }
+
+  // ======================================================================
+  // 💝 국고 기부 — 내 카드에서 우리 반 국고로 (승인 없이 바로, 1주 한도는 선생님이 정함)
+  //  서버: getDonationInfo · donateToTreasury
+  // ======================================================================
+  var donInfo = null;
+  function loadDonate() {
+    var box = $('wt-donate-box'), sno = target();
+    if (!sno) { box.innerHTML = empty('💝', '위에서 학생을 먼저 골라 주세요.'); return; }
+    box.innerHTML = '<div class="empty-msg">불러오는 중...</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      if (!r || !r.success) { box.innerHTML = fail(r && r.msg); return; }
+      donInfo = r; renderDonate();
+    }).withFailureHandler(function (e) { box.innerHTML = fail(e); }).getDonationInfo(cc(), sno);
+  }
+  function renderDonate() {
+    var r = donInfo, box = $('wt-donate-box'), h = '';
+    var pct = r.limit > 0 ? Math.min(100, Math.round(r.used / r.limit * 100)) : 0, canGive = r.limit > 0 && r.left > 0 && r.card > 0;
+    h += '<div class="don-hero"><div class="don-hero-ic">💝</div><div><div class="don-hero-t">우리 반 국고에 기부하기</div>' +
+      '<div class="don-hero-s">내 카드의 돈을 우리 반 국고에 보탤 수 있어요. 국고는 학급 파티처럼 <b>모두를 위해</b> 쓰여요.<br>기부하면 <b>선생님 승인 없이 바로</b> 국고에 들어가요.</div></div></div>';
+    if (r.limit <= 0) h += '<div class="don-off">🙏 지금은 선생님이 기부를 받지 않아요.</div>';
+    else {
+      h += '<div class="don-grid"><div class="don-card"><div class="don-lb">💳 내 카드</div><div class="don-v">' + won(r.card) + '</div></div>' +
+        '<div class="don-card"><div class="don-lb">📅 이번 주 기부 / 1주 한도</div><div class="don-v">' + won(r.used) + ' <small>/ ' + won(r.limit) + '</small></div><div class="don-bar"><i style="width:' + pct + '%"></i></div></div>' +
+        '<div class="don-card"><div class="don-lb">✨ 이번 주 남은 한도</div><div class="don-v green">' + won(r.left) + '</div></div></div>';
+      var max = Math.min(r.left, r.card);
+      h += '<div class="don-form"><label>기부할 금액<div class="don-amt"><input type="number" id="don-amt" min="1" max="' + max + '" placeholder="예: 50"' + (canGive ? '' : ' disabled') + '><span>머니</span></div></label>' +
+        '<div class="don-quick">' + [10, 50, 100].filter(function (v) { return v <= max; }).map(function (v) { return '<button class="sm-chip" onclick="donPick(' + v + ')">' + v + '</button>'; }).join('') +
+        (max > 0 ? '<button class="sm-chip" onclick="donPick(' + max + ')">할 수 있는 만큼 (' + max.toLocaleString() + ')</button>' : '') + '</div>' +
+        '<label>응원 한마디 (선택)<input type="text" id="don-memo" maxlength="30" placeholder="예: 학급 파티에 써 주세요!"' + (canGive ? '' : ' disabled') + '></label>' +
+        '<button class="sb sb-green don-btn" onclick="donGive()"' + (canGive ? '' : ' disabled') + '>💝 기부하기</button>' +
+        (!canGive ? '<div class="don-why">' + (r.left <= 0 ? '이번 주 기부 한도를 다 썼어요. 다음 주 월요일에 다시 기부할 수 있어요.' : '카드에 돈이 없어요.') + '</div>' : '') + '</div>';
+    }
+    h += '<div class="don-class">🏫 이번 주 우리 반은 <b>' + r.weekCount + '명</b>이 <b>' + won(r.weekTotal) + '</b>을 기부했어요.</div>';
+    h += '<div class="don-sec">📒 나의 기부 기록</div>';
+    h += r.mine.length ? '<div class="don-list">' + r.mine.map(function (x) {
+      return '<div class="don-row"><span class="don-d">' + E(x.date) + (x.thisWeek ? ' <i>이번 주</i>' : '') + '</span><span class="don-m">' + E(x.memo.replace(/^\S+번 \S+\s*·?\s*/, '') || '기부') + '</span><b>' + won(x.amount) + '</b></div>';
+    }).join('') + '</div>' : empty('🌱', '아직 기부한 기록이 없어요.');
+    box.innerHTML = h;
+    motion(box.querySelectorAll('.don-card, .don-row'));
+  }
+  window.donPick = function (v) { var el = $('don-amt'); if (el) el.value = v; };
+  window.donGive = async function () {
+    var r = donInfo, amt = parseInt(($('don-amt') || {}).value, 10), memo = (($('don-memo') || {}).value || '').trim(), sno = target();
+    if (!amt || amt <= 0) return alert('기부할 금액을 적어 주세요.');
+    if (amt > r.left) return alert('이번 주 남은 기부 한도는 ' + won(r.left) + '이에요.');
+    if (amt > r.card) return alert('카드 잔액(' + won(r.card) + ')보다 많이 기부할 수 없어요.');
+    if (!await uiConfirm('💝 ' + won(amt) + '을 우리 반 국고에 기부할까요?\n\n기부한 돈은 돌려받을 수 없고, 승인 없이 바로 국고에 들어가요.' + (memo ? '\n응원 한마디: ' + memo : ''))) return;
+    if (typeof showLoading === 'function') showLoading();
+    google.script.run.withSuccessHandler(function (res) {
+      if (typeof hideLoading === 'function') hideLoading();
+      if (!res || !res.success) return alert((res && res.msg) || '기부하지 못했어요.');
+      if ($('s-card')) { $('s-card').textContent = Number(res.newCard).toLocaleString() + ' 머니'; if (typeof walletRecalcTotal === 'function') walletRecalcTotal('s'); }
+      if (typeof loadTx === 'function') loadTx(cc(), sno, 's-tx-tbody', 's-tx-cnt');
+      loadDonate();
+    }).withFailureHandler(function (e) { if (typeof hideLoading === 'function') hideLoading(); alert('오류: ' + e.message); }).donateToTreasury(cc(), sno, amt, memo);
+  };
 
   // ======================================================================
   // 📈 나의 주식 (증권회사와 같은 시세판 + 보유 주식 + 정보함)

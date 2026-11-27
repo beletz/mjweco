@@ -633,6 +633,17 @@
         <button class="btn btn-sm btn-red" style="height:38px;margin-top:22px;" onclick="doIndTax()"><i class="fa-solid fa-minus"></i> 징수</button>
       </div>
     </div>
+    <!-- 💝 국고 기부 한도 (app.js loadDonationAdmin) -->
+    <div class="sc">
+      <div class="st"><i class="fa-solid fa-hand-holding-heart" style="color:var(--pink,#EC4899);"></i> 국고 기부 한도
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadDonationAdmin()"><i class="fa-solid fa-rotate-right"></i></button></div>
+      <div class="info-box">💝 학생들이 <b>용돈기입장 → 💝 국고 기부</b>에서 자기 카드로 국고에 기부할 수 있어요. 기부는 <b>승인 없이 바로</b> 국고에 들어가요.<br>한 학생이 <b>1주(월~일)</b>에 기부할 수 있는 최대 금액을 정해 주세요. <b>0</b>이면 기부를 받지 않아요.</div>
+      <div class="ar">
+        <div><div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:5px;">1주 기부 한도 (머니)</div><input type="number" id="don-limit" min="0" placeholder="예: 500" style="width:140px;padding:10px 12px;border:2px solid var(--border);border-radius:11px;font-size:15px;font-family:'Pretendard',sans-serif;"></div>
+        <button class="btn btn-sm btn-green" style="height:38px;margin-top:22px;" onclick="saveDonationLimit()"><i class="fa-solid fa-floppy-disk"></i> 한도 저장</button>
+      </div>
+      <div id="don-admin-week" style="margin-top:14px;"></div>
+    </div>
   </div>
 
  <!-- CREDIT ADMIN PANEL -->
@@ -648,6 +659,10 @@
     <div id="cad-tab2" onclick="creditAdminTab('manual',this)"
       style="padding:11px 20px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:all 0.2s;white-space:nowrap;color:#64748B;">
       ✏️ 수동 신용 조정
+    </div>
+    <div id="cad-tab4" onclick="creditAdminTab('coupon',this)"
+      style="padding:11px 20px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:all 0.2s;white-space:nowrap;color:#64748B;">
+      🎟️ 신용 구제 쿠폰
     </div>
     <div id="cad-tab3" onclick="creditAdminTab('grade',this)"
   style="padding:11px 20px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;transition:all 0.2s;white-space:nowrap;color:#64748B;">
@@ -706,6 +721,19 @@
 </div>
 
 <!-- 등급 급간 설정 패널 -->
+<!-- 🎟️ 신용 구제 쿠폰 (app.js loadCouponAdmin) -->
+<div id="cad-panel-coupon" style="display:none;">
+  <div class="sc">
+    <div class="st"><i class="fa-solid fa-ticket" style="color:var(--orange);"></i> 신용 구제 쿠폰 설정</div>
+    <div class="info-box">🎟️ 매점 상품이에요. 신용 점수가 <b>기준 점수 미만</b>인 학생만 살 수 있고, 산 때부터 <b>효과 기간</b> 동안 신용 점수가 <b>오를 때마다 배율만큼</b> 받아요. (예: 과제 +2점 → +4점) 깎이는 점수는 그대로예요. 판매 금액은 국고로 들어가요.</div>
+    <div id="cp-admin-cfg"><div class="empty-msg">불러오는 중...</div></div>
+  </div>
+  <div class="sc">
+    <div class="st"><i class="fa-solid fa-user-clock" style="color:var(--purple);"></i> 쿠폰 사용 중인 학생
+      <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadCouponAdmin()"><i class="fa-solid fa-rotate-right"></i></button></div>
+    <div id="cp-admin-list"><div class="empty-msg">불러오는 중...</div></div>
+  </div>
+</div>
 <div id="cad-panel-grade" style="display:none;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
     <div>
@@ -1108,7 +1136,9 @@
             <div class="dt" onclick="walletTab('wt-store',this)">🏪 매점 시세표</div>
             <div class="dt" onclick="walletTab('wt-law',this)">📜 벌금 법전</div>
             <div class="dt" onclick="walletTab('wt-stock',this)">📈 나의 주식</div>
+            <div class="dt" onclick="walletTab('wt-donate',this)">💝 국고 기부</div>
             <div class="dt" onclick="walletTab('wt-seat',this)">🏫 우리 반 자리</div>
+            <div class="dt" onclick="walletTab('wt-hof',this)">🏆 명예의 전당</div>
           </div>
         </div>
         <!-- 📚 내 과제 현황 -->
@@ -1148,6 +1178,10 @@
         <div class="tc" id="wt-store"><div id="wt-store-box"><div class="empty-msg">불러오는 중...</div></div></div>
         <!-- 📜 벌금 법전 -->
         <div class="tc" id="wt-law"><div id="wt-law-box"><div class="empty-msg">불러오는 중...</div></div></div>
+        <!-- 💝 국고 기부 (wallet-tabs.js) -->
+        <div class="tc" id="wt-donate"><div id="wt-donate-box"><div class="empty-msg">불러오는 중...</div></div></div>
+        <!-- 🏆 명예의 전당 (wallet-tabs.js) -->
+        <div class="tc" id="wt-hof"><div id="wt-hof-box"><div class="empty-msg">불러오는 중...</div></div></div>
         <!-- 🏫 우리 반 자리 (seatmap.js) -->
         <div class="tc" id="wt-seat"><div class="info-box">🏫 내가 앉는 자리에는 <b>나</b> 표시가 있어요. 내 자리를 누르면 혜택을 보고, 내가 주인인 자리는 🏛️ 공공임대에 등록할 수 있어요.</div><div id="wt-seat-box"><div class="empty-msg">불러오는 중...</div></div></div>
         <!-- 📈 나의 주식 -->
@@ -1172,7 +1206,7 @@
         <div class="tc act" id="wt-book">
           <div class="crb">
             <div class="crc"><i class="fa-solid fa-crown" style="font-size:18px;color:var(--purple);margin-bottom:1px;"></i><div class="cgn" id="s-grade-num">-</div></div>
-            <div><div class="cit">나의 신용: <span id="s-grade-lbl">--</span></div><div class="cis">현재 점수: <span id="s-credit">0</span> 점</div></div>
+            <div><div class="cit">나의 신용: <span id="s-grade-lbl">--</span></div><div class="cis">현재 점수: <span id="s-credit">0</span> 점</div><div id="s-coupon-badge" class="cp-badge" style="display:none;"></div></div>
           </div>
           <div class="ag ag4">
             <div class="ac2 tot"><div class="ai">👑</div><div class="al">현재 보유 총 자산</div><div class="av" id="s-total">0 머니</div></div>
@@ -1595,6 +1629,11 @@
   <div style="padding:24px 5%;">
     <div id="credit-mgr-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">
       <div style="text-align:center;padding:40px;color:#CBD5E1;grid-column:1/-1;font-family:Pretendard,sans-serif;">새로고침을 눌러주세요.</div>
+    </div>
+    <!-- 🎟️ 구제 쿠폰 사용 현황 (신용등급관리위원장은 보기만) -->
+    <div class="sc" style="margin-top:18px;">
+      <div class="st"><i class="fa-solid fa-ticket" style="color:var(--orange);"></i> 신용 구제 쿠폰 사용 중인 학생 <span class="pill" style="margin-left:6px;">위원장만 볼 수 있어요</span></div>
+      <div id="cm-coupon-list"><div class="empty-msg">불러오는 중...</div></div>
     </div>
   </div>
 </div>

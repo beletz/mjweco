@@ -221,7 +221,7 @@ function mdTab(panelId, tabEl){
   document.querySelectorAll('.md-panel').forEach(function(p){p.classList.remove('act')});
 
   // ★ md-panel 클래스 밖에 있는 서브패널도 명시적으로 숨김
-  ['cad-panel-report','cad-panel-manual','cad-panel-grade'].forEach(function(id){
+  ['cad-panel-report','cad-panel-manual','cad-panel-grade','cad-panel-coupon'].forEach(function(id){
     var p=$(id); if(p) p.style.display='none';
   });
 
@@ -231,7 +231,7 @@ function mdTab(panelId, tabEl){
   if(panelId==='md-citizens')          { loadList(); }
   if(panelId==='md-salary')            { loadSalaryTable(); }
   if(panelId==='md-bank-admin')        { loadBankSettings(); loadDepositCreditSettings(); loadAllDeposits(); }
-  if(panelId==='md-tax-admin')         { refreshTaxSels(); }
+  if(panelId==='md-tax-admin')         { refreshTaxSels(); loadDonationAdmin(); }
   if(panelId==='md-credit-admin')      { creditAdminTab('report', $('cad-tab1')); }
   if(panelId==='md-stats')             { loadStats(); loadHomeworkCreditSettings(); }
   if(panelId==='md-wallet')            { refreshTeacherSel(); }
@@ -1192,7 +1192,7 @@ function openStudentPanel(viewId){
   }
   if(viewId==='view-police')      { loadFineStudents(); loadFineLog(); loadFineLawChips(); loadFineRequestsMine(); }
   if(viewId==='view-stock')       { if(typeof initStockMarket==='function') initStockMarket(); }
-  if(viewId==='view-credit-mgr')  { loadCreditMgrList(); }
+  if(viewId==='view-credit-mgr')  { loadCreditMgrList(); loadCouponMgr(); }
   if(viewId==='view-tax-office')  { loadTaxOfficeDashboard(); }
   if(viewId==='view-asset-inspect'){ loadAssetInspect(); }
   if(viewId==='view-stats-office') { loadStatsOffice(); }
@@ -1262,6 +1262,33 @@ function fillWalletStudentSelect(){
   google.script.run.withSuccessHandler(function(r){
     if(r.success){ _stuList = r.list; render(r.list); }
   }).getStudentList(cc);
+}
+
+// ── 💝 국고 기부 한도 (마스터 → 세금 관리) — 서버 getDonationInfo · setDonationLimit ──
+function loadDonationAdmin(){
+  var box=$('don-admin-week'); if(!box||!_adminCC) return;
+  box.innerHTML='<div class="empty-msg">불러오는 중...</div>';
+  google.script.run.withSuccessHandler(renderDonationAdmin).withFailureHandler(function(e){ box.innerHTML='<div class="empty-msg">오류: '+esc(e.message)+'</div>'; }).getDonationInfo(_adminCC,'');
+}
+function renderDonationAdmin(r){
+  var box=$('don-admin-week'); if(!box) return;
+  if(!r||!r.success){ box.innerHTML='<div class="empty-msg">불러오지 못했어요: '+esc(r&&r.msg)+'</div>'; return; }
+  if($('don-limit')) $('don-limit').value=r.limit;
+  var w=function(n){ return Number(n||0).toLocaleString()+' 머니'; };
+  var h='<div class="don-adm-head">📅 이번 주('+esc(r.monday)+' 월요일부터) 기부 <b>'+r.weekCount+'명 · '+w(r.weekTotal)+'</b>'+(r.limit>0?' · 1주 한도 '+w(r.limit):' · <span style="color:#B91C1C;">지금은 기부를 받지 않아요</span>')+'</div>';
+  h+= (r.byStudent&&r.byStudent.length) ? '<div class="don-adm-list">'+r.byStudent.map(function(s){
+      var pct=r.limit>0?Math.min(100,Math.round(s.amount/r.limit*100)):100;
+      return '<div class="don-adm-row"><span>'+esc(s.no)+'번 '+esc(s.name)+'</span><div class="don-bar"><i style="width:'+pct+'%"></i></div><b>'+w(s.amount)+'</b></div>'; }).join('')+'</div>'
+    : '<div class="empty-msg">이번 주에는 아직 기부가 없어요.</div>';
+  box.innerHTML=h;
+}
+function saveDonationLimit(){
+  var v=($('don-limit')||{}).value;
+  if(v===''||isNaN(parseInt(v))||parseInt(v)<0) return alert('한도를 0 이상의 숫자로 적어 주세요. (0 = 기부 받지 않음)');
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success) return alert((r&&r.msg)||'저장하지 못했어요.');
+    showToast('✅ '+r.msg); renderDonationAdmin(r);
+  }).withFailureHandler(function(e){ alert('오류: '+e.message); }).setDonationLimit(_adminCC, parseInt(v), _isTeacher===true);
 }
 
 function walletTeacherPick(){
@@ -2656,13 +2683,13 @@ async function submitCreditReportUI(){
 // ── 마스터 신용 어드민 탭 ──
 function creditAdminTab(mode, el){
   // 모든 탭 버튼 비활성화
-  ['cad-tab1','cad-tab2','cad-tab3'].forEach(function(id){
+  ['cad-tab1','cad-tab2','cad-tab3','cad-tab4'].forEach(function(id){
     var t=$(id);
     if(t){ t.style.background='transparent'; t.style.color='#64748B'; t.style.boxShadow='none'; }
   });
 
   // ★ 모든 패널 ID를 명시적으로 숨김 (querySelectorAll 방식 안 씀)
-  ['cad-panel-report','cad-panel-manual','cad-panel-grade'].forEach(function(id){
+  ['cad-panel-report','cad-panel-manual','cad-panel-grade','cad-panel-coupon'].forEach(function(id){
     var p=$(id); if(p) p.style.display='none';
   });
 
@@ -2680,6 +2707,46 @@ function creditAdminTab(mode, el){
   if(mode==='report') loadCreditReportList();
   if(mode==='manual') renderCreditTable();
   if(mode==='grade')  loadCreditGradeSettings();
+  if(mode==='coupon') loadCouponAdmin();
+}
+
+// ============================================================
+// 🎟️ 신용 구제 쿠폰 — 선생님 설정 · 사용 중인 학생 (신용등급관리위원장은 목록만)
+//  서버: getCouponUsers · setCouponConfig
+// ============================================================
+function renderCouponUsers(r, boxId){
+  var box=$(boxId); if(!box) return;
+  if(!r||!r.success){ box.innerHTML='<div class="empty-msg">'+esc((r&&r.msg)||'불러오지 못했어요.')+'</div>'; return; }
+  var h='';
+  if(!r.active.length) h+='<div class="empty-msg">지금 쿠폰을 쓰고 있는 학생이 없어요.</div>';
+  else h+='<div class="stw"><table class="stb"><thead><tr><th>학생</th><th>산 때</th><th>만료</th><th>남은 기간</th><th>배율</th><th>점수 (산 때 → 지금)</th></tr></thead><tbody>'+
+    r.active.map(function(x){ return '<tr><td><b>'+esc(x.no)+'번 '+esc(x.name)+'</b></td><td>'+esc(x.boughtAt)+'</td><td><b>'+esc(x.expiresAt)+'</b></td><td><span class="cp-left">'+x.daysLeft+'일 남음</span></td><td>'+x.mult+'배</td><td>'+x.creditAtBuy+' → '+(x.creditNow==null?'-':x.creditNow)+'점</td></tr>'; }).join('')+'</tbody></table></div>';
+  if(r.past&&r.past.length) h+='<details class="ls-last" style="margin-top:10px;"><summary>지난 쿠폰 '+r.past.length+'개</summary><div>'+r.past.map(function(x){ return '<div>'+esc(x.no)+'번 '+esc(x.name)+' · '+esc(x.boughtAt)+' ~ '+esc(x.expiresAt)+' · '+x.creditAtBuy+' → '+(x.creditNow==null?'-':x.creditNow)+'점</div>'; }).join('')+'</div></details>';
+  box.innerHTML=h;
+}
+function loadCouponAdmin(){
+  var cc=_adminCC||_cc; if(!cc) return;
+  google.script.run.withSuccessHandler(function(r){
+    renderCouponUsers(r,'cp-admin-list');
+    var b=$('cp-admin-cfg'); if(!b||!r||!r.success) return;
+    var c=r.cfg, inp=function(k,lb,unit,step){ return '<label class="lc">'+lb+'<span><input id="cp-'+k+'" type="number" step="'+(step||1)+'" value="'+c[k]+'"> '+unit+'</span></label>'; };
+    b.innerHTML='<div class="lc-grid">'+
+      '<label class="lc">🛒 매점에서 판매<span><input id="cp-on" type="checkbox" style="width:22px;height:22px;"'+(c.on?' checked':'')+'> 팔기</span></label>'+
+      inp('price','💰 가격','머니')+inp('threshold','📉 구매 가능 기준 (이 점수 미만)','점')+inp('mult','✖️ 배율','배',0.5)+inp('days','⏳ 효과 기간','일')+'</div>'+
+      '<button class="btn btn-green btn-sm" onclick="saveCouponConfig()"><i class="fa-solid fa-floppy-disk"></i> 설정 저장</button>'+
+      '<span style="font-size:13px;color:var(--gray);margin-left:8px;">이미 산 쿠폰은 산 때의 배율·기간 그대로예요.</span>';
+  }).withFailureHandler(function(e){ $('cp-admin-list').innerHTML='<div class="empty-msg">오류: '+esc(e.message)+'</div>'; }).getCouponUsers(cc, _isTeacher===true, _sno||'');
+}
+function saveCouponConfig(){
+  var c={ on:$('cp-on').checked, price:$('cp-price').value, threshold:$('cp-threshold').value, mult:$('cp-mult').value, days:$('cp-days').value };
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success) return alert((r&&r.msg)||'저장하지 못했어요.');
+    showToast('✅ '+r.msg); loadCouponAdmin();
+  }).withFailureHandler(function(e){ alert('오류: '+e.message); }).setCouponConfig(_adminCC||_cc, c, _isTeacher===true);
+}
+function loadCouponMgr(){
+  var cc=_cc||_adminCC; if(!cc||!$('cm-coupon-list')) return;
+  google.script.run.withSuccessHandler(function(r){ renderCouponUsers(r,'cm-coupon-list'); }).getCouponUsers(cc, _isTeacher===true, _sno||'');
 }
 
 function loadCreditReportList(){
@@ -5534,7 +5601,7 @@ function returnToStudentDash(){
 
   // 4. 서브패널 전부 숨김 (sal-panel, cad-panel 등 inline display 초기화)
   ['sal-panel-table','sal-panel-quick','sal-panel-smart',
-   'cad-panel-report','cad-panel-manual','cad-panel-grade'].forEach(function(id){
+   'cad-panel-report','cad-panel-manual','cad-panel-grade','cad-panel-coupon'].forEach(function(id){
     var p=$(id); if(p) p.style.display='none';
   });
 

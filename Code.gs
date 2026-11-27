@@ -727,6 +727,7 @@ function redeemDepositByBanker(classCode, studentNo, depositRowNo) {
 
     var newBank   = bankBalance - principal;
     var newCard   = cardBalance + total;
+    var boost = _creditBoost(cc, sno, creditGain, wkLabel + ' 예금 만기'); creditGain = boost.delta;   // 🎟️ 구제 쿠폰
     var newCredit = Math.min(100, currentCredit + creditGain);
 
     stuSheet.getRange(stuRowIdx, 5).setValue(newCard);
@@ -742,7 +743,7 @@ function redeemDepositByBanker(classCode, studentNo, depositRowNo) {
     SpreadsheetApp.flush();
     return {
       success: true,
-      msg: '만기 지급 완료! '+total.toLocaleString()+'머니 지급 + 신용점수 +'+creditGain+'점 부여',
+      msg: '만기 지급 완료! '+total.toLocaleString()+'머니 지급 + 신용점수 +'+creditGain+'점 부여'+boost.note,
       creditGain: creditGain,
       newCredit: newCredit
     };
@@ -975,6 +976,7 @@ function redeemDeposit(classCode, studentNo, depositIdx) {
       3: creditSettings.c3||0, 4: creditSettings.c4||0
     };
     var creditGain = creditMap[wkNum] || 0;
+    var boost = _creditBoost(cc, sno, creditGain, wkLabel + ' 예금 만기'); creditGain = boost.delta;   // 🎟️ 구제 쿠폰
     var newCredit  = Math.min(100, currentCredit + creditGain);
 
     stuSheet.getRange(stuRowIdx,5).setValue(newCard);
@@ -990,7 +992,7 @@ function redeemDeposit(classCode, studentNo, depositIdx) {
 
     return {
       success: true,
-      msg: '만기 해지 완료! 원금'+principal+' + 이자'+interest+' = '+total+'머니 지급 + 신용점수 +'+creditGain+'점 부여',
+      msg: '만기 해지 완료! 원금'+principal+' + 이자'+interest+' = '+total+'머니 지급 + 신용점수 +'+creditGain+'점 부여'+boost.note,
       newCard: newCard, newBank: newBank, interest: interest,
       creditGain: creditGain, newCredit: newCredit
     };
@@ -1009,10 +1011,11 @@ function adjustCredit(classCode, studentNo, delta, reason) {
     for (var i = 1; i < data.length; i++) {
       if (cleanText(data[i][0])===cc && cleanText(String(data[i][1]))===sno) {
         var cur = Number(data[i][6])||0;
-        var next = Math.max(0, Math.min(100, cur + parseInt(delta)));
+        var boost = _creditBoost(cc, sno, parseInt(delta), '신용점수 조정' + (reason ? ' · ' + reason : ''));   // 🎟️ 구제 쿠폰 (오를 때만)
+        var next = Math.max(0, Math.min(100, cur + boost.delta));
         stuSheet.getRange(i+1,7).setValue(next);
         try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
-        return { success: true, msg: "신용점수 조정 완료 ("+cur+" → "+next+")", newCredit: next };
+        return { success: true, msg: "신용점수 조정 완료 ("+cur+" → "+next+")" + boost.note, newCredit: next, boosted: boost.boosted };
       }
     }
     return { success: false, msg: "학생을 찾을 수 없습니다." };
@@ -1025,17 +1028,18 @@ function adjustCreditBulk(classCode, delta, reason) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var stuSheet = getOrCreateStudentsSheet(ss);
     var data = stuSheet.getDataRange().getValues();
-    var cc = cleanText(classCode), cnt = 0;
+    var cc = cleanText(classCode), cnt = 0, boostedCnt = 0;
     for (var i = 1; i < data.length; i++) {
       if (cleanText(data[i][0])===cc) {
         var cur = Number(data[i][6])||0;
-        var next = Math.max(0, Math.min(100, cur + parseInt(delta)));
+        var boost = _creditBoost(cc, cleanText(String(data[i][1])), parseInt(delta), '신용점수 일괄 조정' + (reason ? ' · ' + reason : ''));   // 🎟️ 구제 쿠폰
+        var next = Math.max(0, Math.min(100, cur + boost.delta));
         stuSheet.getRange(i+1,7).setValue(next);
-        cnt++;
+        cnt++; if (boost.boosted) boostedCnt++;
       }
     }
     try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
-    return { success: true, msg: cnt+"명 신용점수 일괄 조정 완료" };
+    return { success: true, msg: cnt+"명 신용점수 일괄 조정 완료" + (boostedCnt ? " (🎟️ 구제 쿠폰 사용 중 " + boostedCnt + "명은 배율 적용)" : "") };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
@@ -2296,11 +2300,12 @@ function approvePendingCredit(classCode, rowNo) {
     if (rn<1||rn>=data.length) return { success: false, msg: '항목을 찾을 수 없습니다.' };
     if (cleanText(data[rn][0])!==cc) return { success: false, msg: '접근 권한이 없습니다.' };
     var sno   = cleanText(String(data[rn][1]));
-    var delta = Number(data[rn][3])||0;
+    var delta = Number(data[rn][3])||0, boostNote = '';
     for (var i = 1; i < stuData.length; i++) {
       if (cleanText(stuData[i][0])===cc && cleanText(String(stuData[i][1]))===sno) {
         var cur  = Number(stuData[i][6])||0;
-        var next = Math.max(0, Math.min(100, cur + delta));
+        var boost = _creditBoost(cc, sno, delta, '신용위원회 승인');   // 🎟️ 구제 쿠폰 (오를 때만)
+        var next = Math.max(0, Math.min(100, cur + boost.delta)); boostNote = boost.note;
         stuSheet.getRange(i+1,7).setValue(next); break;
       }
     }
@@ -2308,7 +2313,7 @@ function approvePendingCredit(classCode, rowNo) {
     pending.getRange(rn+1,7).setValue(getTodayStr());
     try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
     SpreadsheetApp.flush();
-    return { success: true, msg: '승인 완료! 신용점수가 반영되었습니다.' };
+    return { success: true, msg: '승인 완료! 신용점수가 반영되었습니다.' + boostNote };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
@@ -5747,4 +5752,322 @@ function _reMoney(ss, cc) {
 function getRentDues(classCode) {
   try { var ctx = _leaseCtx(classCode); return { success: true, dues: _debtDueBySno(ctx), graceDays: ctx.cfg.graceDays }; }
   catch (e) { return { success: false, msg: e.message }; }
+}
+
+
+// ==========================================
+// [국고 기부] 학생이 자기 카드에서 국고로 기부 — 승인 없이 바로 국고에 들어감
+//  1주(월요일~일요일, 한국 시간)마다 한 사람이 기부할 수 있는 한도 = 선생님이 마스터 → 세금 관리에서 정함
+// DonationSettings: [0]학급코드 [1]1주 한도(0 = 지금은 기부를 받지 않음)
+// 기부 기록: Treasury [내용 '[기부] 3번 박산 · 한마디', 구분 '수입', 상태 '승인', 등록자번호 = 학생번호]
+//           + 학생 용돈기입장 '[국고 기부]' (종류 '기부')
+// ==========================================
+var DONATION_LIMIT_DEFAULT = 500;
+var DONATION_TAG = '[기부]';
+function _donationLimit(ss, cc) {
+  var sheet = ss.getSheetByName('DonationSettings');
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc && data[i][1] !== '' && data[i][1] !== null) return Math.max(0, Number(data[i][1]) || 0);
+  }
+  return DONATION_LIMIT_DEFAULT;
+}
+// 이번 주 기부 기록 (학급 전체) — {sno: 합계}, 목록
+function _donationsThisWeek(ss, cc) {
+  var data = getOrCreateTreasurySheet(ss).getDataRange().getValues(), mon = _newsWeek(), by = {}, list = [];
+  for (var i = 1; i < data.length; i++) {
+    if (cleanText(data[i][0]) !== cc || String(data[i][2] || '').indexOf(DONATION_TAG) !== 0 || String(data[i][5]) !== '승인') continue;
+    var d = data[i][1], ds = d instanceof Date ? Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd') : String(d || '');
+    var sno = cleanText(String(data[i][6] == null ? '' : data[i][6])), amt = Number(data[i][4]) || 0;
+    list.push({ date: ds, sno: sno, amount: amt, memo: String(data[i][2] || '').replace(DONATION_TAG, '').trim(), thisWeek: ds >= mon });
+    if (ds >= mon) by[sno] = (by[sno] || 0) + amt;
+  }
+  return { by: by, list: list, monday: mon };
+}
+
+// 기부 화면용: 한도·이번 주에 낸 돈·남은 한도·내 기부 기록·우리 반 이번 주 합계 (studentNo가 비면 선생님용 학생별 목록)
+function getDonationInfo(classCode, studentNo) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo));
+    var limit = _donationLimit(ss, cc), w = _donationsThisWeek(ss, cc), names = {}, card = 0;
+    var sd = getOrCreateStudentsSheet(ss).getDataRange().getValues();
+    for (var i = 1; i < sd.length; i++) if (cleanText(sd[i][0]) === cc) {
+      var k = cleanText(String(sd[i][1])); names[k] = String(sd[i][2] || '');
+      if (k === sno) card = Number(sd[i][4]) || 0;
+    }
+    var used = sno ? (w.by[sno] || 0) : 0, total = 0, count = 0;
+    Object.keys(w.by).forEach(function (k) { total += w.by[k]; count++; });
+    var res = { success: true, limit: limit, used: used, left: Math.max(0, limit - used), card: card, monday: w.monday,
+      weekTotal: total, weekCount: count,
+      mine: sno ? w.list.filter(function (x) { return x.sno === sno; }).reverse().slice(0, 30) : [] };
+    if (!sno) res.byStudent = Object.keys(w.by).map(function (k) { return { no: k, name: names[k] || '', amount: w.by[k] }; })
+      .sort(function (a, b) { return b.amount - a.amount; });
+    return res;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 학생이 기부하기 (선생님 승인 없이 바로 국고에)
+function donateToTreasury(classCode, studentNo, amount, memo) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo));
+    var amt = Number(amount);
+    if (!sno) return { success: false, msg: '학생을 먼저 골라 주세요.' };
+    if (!isFinite(amt) || amt <= 0 || Math.floor(amt) !== amt) return { success: false, msg: '기부할 금액을 1 머니 이상, 자연수로 적어 주세요.' };
+    var limit = _donationLimit(ss, cc);
+    if (limit <= 0) return { success: false, msg: '지금은 선생님이 기부를 받지 않아요.' };
+    var used = _donationsThisWeek(ss, cc).by[sno] || 0, left = Math.max(0, limit - used);
+    if (amt > left) return { success: false, msg: '이번 주 기부 한도를 넘어요. (1주 한도 ' + limit.toLocaleString() + ' 머니 · 이번 주에 ' + used.toLocaleString() + ' 머니 기부 · 남은 한도 ' + left.toLocaleString() + ' 머니)' };
+    var stuSheet = getOrCreateStudentsSheet(ss), sd = stuSheet.getDataRange().getValues(), row = -1, card = 0, name = '';
+    for (var i = 1; i < sd.length; i++) if (cleanText(sd[i][0]) === cc && cleanText(String(sd[i][1])) === sno) { row = i + 1; card = Number(sd[i][4]) || 0; name = String(sd[i][2] || ''); break; }
+    if (row === -1) return { success: false, msg: '학생 정보를 찾을 수 없어요.' };
+    if (card < amt) return { success: false, msg: '카드 잔액이 부족해요. (카드 ' + card.toLocaleString() + ' 머니)' };
+    var note = String(memo || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 30), today = getTodayStr(), newCard = card - amt;
+    stuSheet.getRange(row, 5).setValue(newCard);
+    getOrCreateTransSheet(ss).appendRow([today, cc, sno, '[국고 기부] 우리 반 국고에 기부' + (note ? ' · ' + note : ''), '', amt, newCard, '기부']);
+    getOrCreateTreasurySheet(ss).appendRow([cc, today, DONATION_TAG + ' ' + sno + '번 ' + name + (note ? ' · ' + note : ''), '수입', amt, '승인', sno, today]);
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    SpreadsheetApp.flush();
+    return { success: true, newCard: newCard, left: left - amt,
+      msg: '💝 ' + amt.toLocaleString() + ' 머니를 우리 반 국고에 기부했어요. 고마워요!\n(카드 ' + newCard.toLocaleString() + ' 머니 · 이번 주 남은 기부 한도 ' + (left - amt).toLocaleString() + ' 머니)' };
+  } catch (e) {
+    if (e.message.match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
+    return { success: false, msg: e.message };
+  } finally { lock.releaseLock(); }
+}
+
+// 선생님: 1주 기부 한도 정하기 (0 = 기부 받지 않음)
+function setDonationLimit(classCode, limit, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '기부 한도는 선생님만 정할 수 있어요.' };
+    var v = Number(limit);
+    if (!isFinite(v) || v < 0 || v > 1000000 || Math.floor(v) !== v) return { success: false, msg: '한도는 0 이상의 자연수로 적어 주세요. (0 = 기부 받지 않음)' };
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), sheet = ss.getSheetByName('DonationSettings');
+    if (!sheet) { sheet = ss.insertSheet('DonationSettings'); sheet.appendRow(['학급코드', '1주한도']); }
+    var data = sheet.getDataRange().getValues(), done = false;
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(v); done = true; break; }
+    if (!done) sheet.appendRow([cc, v]);
+    SpreadsheetApp.flush();
+    var r = getDonationInfo(cc, ''); r.msg = v > 0 ? '1주 기부 한도를 ' + v.toLocaleString() + ' 머니로 정했어요.' : '이제 기부를 받지 않아요. (한도 0)';
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+
+// ==========================================
+// [명예의 전당] 국민(용돈기입장) → 🏆 명예의 전당 — 달마다 분야별 순위 (선생님 0번은 빠짐)
+//  ym = 'yyyy-MM' (비우면 이번 달, 한국 시간)
+//  이달 기록: 🛒 구매왕(매점 구매 '도매구매') · 💝 기부왕(국고 '[기부]') · 📈 주식 트레이더(주식을 팔아 낸 이익 합)
+//            🏦 저축왕(예금에 넣은 돈 '예금가입') · 💸 월급왕(스마트 월급 받은 돈)
+//  지금 기록: 💰 자산왕(카드+은행+주식) · ⭐ 신용왕(신용점수)
+// ==========================================
+function getHallOfFame(classCode, ym) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode);
+    var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM');
+    var m = /^\d{4}-\d{2}$/.test(String(ym || '')) ? String(ym) : now;
+    var names = {}, live = getClassStats(cc);
+    ((live && live.students) || []).forEach(function (s) { names[cleanText(s.no)] = s.name; });
+    var dstr = function (d) { return d instanceof Date ? Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd') : String(d || ''); };
+    var cat = { buy: {}, stock: {}, save: {}, pay: {}, give: {}, stockCnt: {}, buyCnt: {} };
+    var add = function (k, sno, v) { if (!sno || sno === '0' || !(sno in names)) return; cat[k][sno] = (cat[k][sno] || 0) + v; };
+    var td = getOrCreateTransSheet(ss).getDataRange().getValues();
+    for (var i = 1; i < td.length; i++) {
+      if (cleanText(td[i][1]) !== cc || dstr(td[i][0]).slice(0, 7) !== m) continue;
+      var sno = cleanText(String(td[i][2] == null ? '' : td[i][2])), type = String(td[i][7] || ''), inc = Number(td[i][4]) || 0, exp = Number(td[i][5]) || 0;
+      if (type === '도매구매') { add('buy', sno, exp); add('buyCnt', sno, 1); }
+      else if (type === '주식매도') {
+        var g = String(td[i][3] || '').match(/(이익 \+|손해 )(-?[\d,]+)/);
+        if (g) add('stock', sno, Number(g[2].replace(/,/g, '')) || 0);
+        add('stockCnt', sno, 1);
+      }
+      else if (type === '주식매수') add('stockCnt', sno, 1);
+      else if (type === '예금가입') add('save', sno, exp);
+      else if (type === '스마트월급' && inc > 0) add('pay', sno, inc);
+    }
+    var tr = getOrCreateTreasurySheet(ss).getDataRange().getValues();
+    for (var j = 1; j < tr.length; j++) {
+      if (cleanText(tr[j][0]) !== cc || String(tr[j][2] || '').indexOf('[기부]') !== 0 || String(tr[j][5]) !== '승인' || dstr(tr[j][1]).slice(0, 7) !== m) continue;
+      add('give', cleanText(String(tr[j][6] == null ? '' : tr[j][6])), Number(tr[j][4]) || 0);
+    }
+    // 큰 순서로, 0보다 큰 사람만. 같은 값이면 같은 등수
+    var rank = function (obj, extra) {
+      var list = Object.keys(obj).filter(function (k) { return obj[k] > 0; }).map(function (k) { var o = { no: k, name: names[k] || '', value: obj[k] }; if (extra) o.sub = extra[k] || 0; return o; })
+        .sort(function (a, b) { return b.value - a.value || (Number(a.no) - Number(b.no)); });
+      list.forEach(function (x, n) { x.rank = n && list[n - 1].value === x.value ? list[n - 1].rank : n + 1; });
+      return list;
+    };
+    var assets = {}, credit = {};
+    ((live && live.students) || []).forEach(function (s) { var k = cleanText(s.no); if (k === '0') return; assets[k] = s.total; credit[k] = s.credit; });
+    var cats = [
+      { id: 'buy',    icon: '🛒', title: '이달의 구매왕',     how: '매점에서 물건을 가장 많이 산 사람',      unit: '머니', list: rank(cat.buy, cat.buyCnt), subUnit: '번 구매' },
+      { id: 'give',   icon: '💝', title: '이달의 기부왕',     how: '우리 반 국고에 가장 많이 기부한 사람',  unit: '머니', list: rank(cat.give) },
+      { id: 'stock',  icon: '📈', title: '이달의 주식 트레이더', how: '주식을 팔아서 이익을 가장 많이 낸 사람', unit: '머니 이익', list: rank(cat.stock, cat.stockCnt), subUnit: '번 거래' },
+      { id: 'save',   icon: '🏦', title: '이달의 저축왕',     how: '예금에 가장 많이 넣은 사람',           unit: '머니', list: rank(cat.save) },
+      { id: 'pay',    icon: '💸', title: '이달의 월급왕',     how: '스마트 월급을 가장 많이 받은 사람',     unit: '머니', list: rank(cat.pay) },
+      { id: 'asset',  icon: '💰', title: '자산왕',           how: '지금 카드+은행+주식이 가장 많은 사람',  unit: '머니', list: rank(assets), now: true },
+      { id: 'credit', icon: '⭐', title: '신용왕',           how: '지금 신용점수가 가장 높은 사람',        unit: '점',   list: rank(credit), now: true }
+    ];
+    return { success: true, month: m, thisMonth: now, cats: cats };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+
+// ==========================================
+// [🎟️ 신용 구제 쿠폰] 매점 상품 — 신용점수가 낮은 학생이 사서, 정해진 기간 동안 오르는 점수를 배율만큼 받음
+//  - 살 수 있는 사람: 지금 신용점수 < 기준 점수, 쿠폰 효과가 진행 중이 아닐 때 (겹치기·연장 없음)
+//  - 효과: 구매 시각부터 days일 동안 점수가 '오르는' 모든 경우 × mult (깎이는 점수는 그대로)
+//          기간 중 점수가 기준 이상이 되어도 기간 끝까지 유지. 만료는 점수를 줄 때마다 '구매 시각 + 기간'과 지금 시각을 비교
+//  - 판매 금액은 국고 수입(학생 이름 없이). 쿠폰 사용 여부는 본인·선생님·신용등급관리위원장만 볼 수 있음
+// CreditCouponSettings: [0]학급코드 [1]설정JSON {on, price, threshold, mult, days}
+// CreditCoupons: [0]학급코드 [1]학생번호 [2]구매시각(ms) [3]만료시각(ms) [4]배율 [5]가격 [6]기준점수 [7]구매 때 점수 [8]구매일
+//  ※ 이 사이트는 서버 없이 브라우저에서 계산하므로 '지금 시각'은 사이트를 연 기기의 시계입니다.
+//  ※ Firestore 보안 규칙은 시트를 통째로 글자로 저장하는 구조라 점수 조건을 검사할 수 없어, 앱 안(이 함수들)에서만 막습니다.
+// ==========================================
+var COUPON_DEFAULT = { on: true, price: 300, threshold: 50, mult: 2, days: 14 };
+function _couponCfg(ss, cc) {
+  var sheet = ss.getSheetByName('CreditCouponSettings'), c = {};
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { try { c = JSON.parse(String(data[i][1] || '{}')); } catch (e) { c = {}; } break; }
+  }
+  var o = {};
+  Object.keys(COUPON_DEFAULT).forEach(function (k) { o[k] = (c[k] === undefined || c[k] === null || c[k] === '') ? COUPON_DEFAULT[k] : c[k]; });
+  o.on = o.on === true || o.on === 'true'; o.price = Number(o.price); o.threshold = Number(o.threshold); o.mult = Number(o.mult); o.days = Number(o.days);
+  return o;
+}
+function _couponSheet(ss) {
+  var sheet = ss.getSheetByName('CreditCoupons');
+  if (!sheet) { sheet = ss.insertSheet('CreditCoupons'); sheet.appendRow(['학급코드', '학생번호', '구매시각', '만료시각', '배율', '가격', '기준점수', '구매때점수', '구매일']); }
+  return sheet;
+}
+// 이 학생의 진행 중인 쿠폰 (없으면 null). now = 지금 시각(ms)
+function _couponActive(ss, cc, sno, now) {
+  var sheet = ss.getSheetByName('CreditCoupons'); if (!sheet) return null;
+  var data = sheet.getDataRange().getValues(), best = null;
+  for (var i = 1; i < data.length; i++) {
+    if (cleanText(data[i][0]) !== cc || cleanText(String(data[i][1])) !== sno) continue;
+    var b = Number(data[i][2]) || 0, e = Number(data[i][3]) || 0;
+    if (b <= now && now < e && (!best || e > best.expiresAt)) best = { boughtAt: b, expiresAt: e, mult: Number(data[i][4]) || 1 };
+  }
+  return best;
+}
+function _couponWhen(ms) { return Utilities.formatDate(new Date(ms), 'Asia/Seoul', 'yyyy-MM-dd HH:mm'); }
+function _couponDaysLeft(a, now) { return Math.max(0, Math.ceil((a.expiresAt - now) / 864e5)); }
+
+// 점수를 줄 때 부름: 오르는 점수(delta > 0)이고 쿠폰이 진행 중이면 × 배율, 학생 용돈기입장에 안내 한 줄
+//  돌려줌 {delta, boosted, note}  (note는 결과 문구 끝에 붙임)
+function _creditBoost(classCode, studentNo, delta, why) {
+  var res = { delta: delta, boosted: false, note: '' };
+  if (!(Number(delta) > 0)) return res;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), sno = cleanText(String(studentNo)), now = Date.now();
+    var a = _couponActive(ss, cc, sno, now);
+    if (!a || !(a.mult > 1)) return res;
+    var d2 = Math.round(Number(delta) * a.mult);
+    var sd = getOrCreateStudentsSheet(ss).getDataRange().getValues(), card = 0;
+    for (var i = 1; i < sd.length; i++) if (cleanText(sd[i][0]) === cc && cleanText(String(sd[i][1])) === sno) { card = Number(sd[i][4]) || 0; break; }
+    getOrCreateTransSheet(ss).appendRow([getTodayStr(), cc, sno, '[신용] ' + (why || '신용점수') + ' +' + d2 + '점 (🎟️ 구제 쿠폰 ' + a.mult + '배 적용: ' + delta + '점 → ' + d2 + '점)', '', '', card, '신용']);
+    return { delta: d2, boosted: true, note: ' (🎟️ 구제 쿠폰 ' + a.mult + '배 적용: ' + delta + '점 → ' + d2 + '점)' };
+  } catch (e) { return res; }
+}
+
+// 학생 화면(매점 시세표): 쿠폰 정보 + 내가 살 수 있는지 + 이유 — 자기 것만
+function getCouponInfo(classCode, studentNo) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo)), now = Date.now();
+    var cfg = _couponCfg(ss, cc), res = { success: true, cfg: cfg, active: null, canBuy: false, reason: '' };
+    if (!sno) { res.reason = '학생을 먼저 골라 주세요.'; return res; }
+    var sd = getOrCreateStudentsSheet(ss).getDataRange().getValues(), found = false;
+    for (var i = 1; i < sd.length; i++) if (cleanText(sd[i][0]) === cc && cleanText(String(sd[i][1])) === sno) { res.credit = Number(sd[i][6]) || 0; res.card = Number(sd[i][4]) || 0; found = true; break; }
+    if (!found) { res.reason = '학생 정보를 찾을 수 없어요.'; return res; }
+    var a = _couponActive(ss, cc, sno, now);
+    if (a) res.active = { mult: a.mult, boughtAt: _couponWhen(a.boughtAt), expiresAt: _couponWhen(a.expiresAt), daysLeft: _couponDaysLeft(a, now) };
+    res.reason = a ? '이미 쿠폰을 사용하고 있어요. (겹쳐 사거나 기간을 늘릴 수 없어요)'
+      : !cfg.on ? '지금은 쿠폰을 팔지 않아요.'
+      : res.credit >= cfg.threshold ? '신용 점수 ' + cfg.threshold + '점 미만만 구매할 수 있어요. (지금 ' + res.credit + '점)'
+      : res.card < cfg.price ? '카드 잔액이 부족해요. (가격 ' + cfg.price.toLocaleString() + ' 머니 · 카드 ' + res.card.toLocaleString() + ' 머니)' : '';
+    res.canBuy = !res.reason;
+    return res;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 쿠폰 사기 — 화면에서 버튼을 막는 것과 별개로, 여기(한 번의 처리 안)에서 점수·중복·잔액을 다시 확인
+function buyCreditCoupon(classCode, studentNo) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), sno = cleanText(String(studentNo == null ? '' : studentNo)), now = Date.now();
+    if (!sno) return { success: false, msg: '학생을 먼저 골라 주세요.' };
+    var cfg = _couponCfg(ss, cc);
+    if (!cfg.on) return { success: false, msg: '지금은 신용 구제 쿠폰을 팔지 않아요.' };
+    var stuSheet = getOrCreateStudentsSheet(ss), sd = stuSheet.getDataRange().getValues(), row = -1, credit = 0, card = 0;
+    for (var i = 1; i < sd.length; i++) if (cleanText(sd[i][0]) === cc && cleanText(String(sd[i][1])) === sno) { row = i + 1; card = Number(sd[i][4]) || 0; credit = Number(sd[i][6]) || 0; break; }
+    if (row === -1) return { success: false, msg: '학생 정보를 찾을 수 없어요.' };
+    if (!(credit < cfg.threshold)) return { success: false, msg: '구매할 수 없어요: 신용 점수 ' + cfg.threshold + '점 미만만 구매할 수 있어요. (지금 ' + credit + '점)' };
+    var a = _couponActive(ss, cc, sno, now);
+    if (a) return { success: false, msg: '구매할 수 없어요: 이미 쿠폰 효과가 진행 중이에요. (' + _couponWhen(a.expiresAt) + '까지 · 겹쳐 사거나 기간을 늘릴 수 없어요)' };
+    if (card < cfg.price) return { success: false, msg: '카드 잔액이 부족해요. (가격 ' + cfg.price.toLocaleString() + ' 머니 · 카드 ' + card.toLocaleString() + ' 머니)' };
+    var exp = now + cfg.days * 864e5, newCard = card - cfg.price, today = getTodayStr();
+    stuSheet.getRange(row, 5).setValue(newCard);
+    _couponSheet(ss).appendRow([cc, sno, now, exp, cfg.mult, cfg.price, cfg.threshold, credit, today]);
+    getOrCreateTransSheet(ss).appendRow([today, cc, sno, '[매점] 🎟️ 신용 구제 쿠폰 구매 (' + cfg.days + '일 동안 오르는 신용점수 ' + cfg.mult + '배)', '', cfg.price, newCard, '쿠폰구매']);
+    if (cfg.price > 0) getOrCreateTreasurySheet(ss).appendRow([cc, today, '[매점] 신용 구제 쿠폰 판매 수익', '수입', cfg.price, '승인', '', today]);
+    try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
+    SpreadsheetApp.flush();
+    return { success: true, newCard: newCard,
+      msg: '🎟️ 신용 구제 쿠폰을 샀어요!\n' + _couponWhen(exp) + '까지(' + cfg.days + '일) 신용 점수가 오를 때마다 ' + cfg.mult + '배로 받아요.\n깎이는 점수는 그대로예요.' };
+  } catch (e) {
+    if (e.message.match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
+    return { success: false, msg: e.message };
+  } finally { lock.releaseLock(); }
+}
+
+// 선생님 · 신용등급관리위원장: 쿠폰 사용 중인 학생 목록과 만료일 (+ 최근 끝난 쿠폰)
+function getCouponUsers(classCode, byTeacher, viewerSno) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), now = Date.now(), names = {}, credit = {}, job = {};
+    var sd = getOrCreateStudentsSheet(ss).getDataRange().getValues();
+    for (var i = 1; i < sd.length; i++) if (cleanText(sd[i][0]) === cc) { var k = cleanText(String(sd[i][1])); names[k] = String(sd[i][2] || ''); credit[k] = Number(sd[i][6]) || 0; job[k] = String(sd[i][3] || ''); }
+    var v = cleanText(String(viewerSno == null ? '' : viewerSno));
+    var mgr = v && job[v] && job[v].split(/\s*,\s*/).indexOf('신용등급관리위원장') !== -1;
+    if (byTeacher !== true && !mgr) return { success: false, msg: '쿠폰 사용 현황은 선생님과 신용등급관리위원장만 볼 수 있어요.' };
+    var sheet = ss.getSheetByName('CreditCoupons'), active = [], past = [];
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var j = 1; j < data.length; j++) {
+        if (cleanText(data[j][0]) !== cc) continue;
+        var s = cleanText(String(data[j][1])), b = Number(data[j][2]) || 0, e = Number(data[j][3]) || 0;
+        var o = { no: s, name: names[s] || '', boughtAt: _couponWhen(b), expiresAt: _couponWhen(e), mult: Number(data[j][4]) || 1,
+          creditAtBuy: Number(data[j][7]) || 0, creditNow: credit[s] == null ? null : credit[s], daysLeft: Math.max(0, Math.ceil((e - now) / 864e5)), _e: e };
+        if (now < e) active.push(o); else past.push(o);
+      }
+    }
+    active.sort(function (a, b) { return a._e - b._e; });
+    past.sort(function (a, b) { return b._e - a._e; });
+    return { success: true, cfg: _couponCfg(ss, cc), active: active, past: past.slice(0, 15) };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 선생님: 쿠폰 설정 (판매 여부·가격·기준 점수·배율·기간)
+function setCouponConfig(classCode, cfg, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '쿠폰 설정은 선생님만 바꿀 수 있어요.' };
+    var c = cfg || {}, o = { on: c.on === true || c.on === 'true' };
+    var lim = { price: [0, 1000000], threshold: [1, 101], mult: [1, 10], days: [1, 60] };
+    for (var k in lim) {
+      var v = Number(c[k]);
+      if (!isFinite(v) || v < lim[k][0] || v > lim[k][1]) return { success: false, msg: '설정 값이 올바르지 않아요. (' + { price: '가격', threshold: '기준 점수', mult: '배율', days: '효과 기간' }[k] + ': ' + lim[k][0] + '~' + lim[k][1] + ')' };
+      o[k] = k === 'mult' ? Math.round(v * 10) / 10 : Math.round(v);
+    }
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), sheet = ss.getSheetByName('CreditCouponSettings');
+    if (!sheet) { sheet = ss.insertSheet('CreditCouponSettings'); sheet.appendRow(['학급코드', '설정JSON']); }
+    var data = sheet.getDataRange().getValues(), done = false;
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(JSON.stringify(o)); done = true; break; }
+    if (!done) sheet.appendRow([cc, JSON.stringify(o)]);
+    SpreadsheetApp.flush();
+    var r = getCouponUsers(cc, true, ''); r.msg = '쿠폰 설정을 저장했어요. (이미 산 쿠폰은 산 때의 배율·기간 그대로예요)';
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
 }
