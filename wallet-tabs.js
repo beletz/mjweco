@@ -44,6 +44,7 @@
     else if (id === 'wt-store') loadStore();
     else if (id === 'wt-law') loadLaw();
     else if (id === 'wt-stock') { loadStock(true); startStockTimer(); }
+    else if (id === 'wt-seat') { if (typeof loadSeatMap === 'function') loadSeatMap('wt-seat-box'); }
   }
 
   // ======================================================================

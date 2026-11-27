@@ -1213,3 +1213,52 @@ body:has(#view-master-dashboard.active) ::-webkit-scrollbar-thumb{ border-color:
 .dp-pl-chip{font-size:13px;background:#fff;border:1px solid #FDE68A;border-radius:999px;padding:3px 10px;color:#1E293B}
 .dp-pl-chip b{color:#D97706}
 .dp-pl-none{font-size:13px;color:#92400E}
+
+/* ===== 자리 종류 · 랜덤 자리 · 공공임대 · 혜택 (seatmap.js) ===== */
+.sm-info{font-size:14px;color:#065F46;background:#ECFDF5;border-radius:10px;padding:7px 12px;margin-bottom:8px}
+.sm-warn{font-size:14px;color:#9A3412;background:#FFF7ED;border:1.5px solid #FDBA74;border-radius:10px;padding:8px 12px;margin-bottom:8px;line-height:1.5}
+.sm-chip.desk{border-style:solid;border-color:#10B981;background:#ECFDF5;color:#065F46}
+.sm-seat.dk-public .sm-desk{background:#E2F5E9;border-color:#4ADE80}
+.sm-seat.dk-public .sm-desk b{color:#166534}
+.sm-seat.dk-teacher .sm-desk{background:#FCE7F3;border-color:#F472B6}
+.sm-seat.dk-teacher .sm-desk b{color:#9D174D}
+.sm-seat.dk .sm-tag{background:#fff;color:#334155;border:1.5px solid #CBD5E1}
+.sm-seat.public .sm-desk{background:#FEF3C7;border-color:#F59E0B}
+.sm-seat.public .sm-tag{background:#D97706;color:#fff}
+.sm-seat.late .sm-tag{background:#DC2626}
+.sm-seat .sm-desk .sm-x{top:-10px;right:-10px}
+.sm-seat.me .sm-desk{box-shadow:0 0 0 4px #FDE047}
+.sm-me{position:absolute;top:-12px;right:-10px;font-style:normal;font-size:13px;background:#FACC15;color:#713F12;border-radius:999px;padding:1px 7px;font-weight:700}
+.sm-legend .lg.public{background:#FEF3C7;border:2px solid #F59E0B}
+.sm-legend .lg.dk-public{background:#E2F5E9;border:2px solid #4ADE80}
+.sm-legend .lg.dk-teacher{background:#FCE7F3;border:2px solid #F472B6}
+.sm-perks{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.sm-perks li{font-size:16px;color:var(--dark);line-height:1.45}
+.pk-k{display:inline-block;font-size:12px;border-radius:999px;padding:1px 8px;margin-right:6px}
+.pk-k.use{background:#E0F2FE;color:#075985}
+.pk-k.own{background:#FEF3C7;color:#92400E}
+.sm-pe{display:grid;gap:7px}
+.sm-pe-row{display:flex;gap:6px;align-items:center}
+.sm-pe-row select{padding:8px;border:2px solid var(--line-strong);border-radius:10px;font-size:14px;font-family:inherit;background:#fff}
+.sm-pe-row input{flex:1;min-width:0;padding:8px 10px;border:2px solid var(--line-strong);border-radius:10px;font-size:15px;font-family:inherit}
+.sm-pe-x{border:none;background:#FEE2E2;color:#B91C1C;width:30px;height:30px;border-radius:50%;cursor:pointer;flex-shrink:0}
+.sm-pe-help{font-size:13px;color:#92400E;line-height:1.5}
+/* 매물 목록 · 임대 계약 화면 */
+.re-late{font-size:12px;background:#FEE2E2;color:#B91C1C;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.re-late.plan{background:#E0F2FE;color:#075985}
+.ls-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.ls-tr{margin-left:auto;font-size:15px;color:#065F46;background:#ECFDF5;border-radius:999px;padding:5px 12px}
+.ls-alert{background:#FEF2F2;border:2px solid #FCA5A5;color:#991B1B;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:15px;line-height:1.6}
+.ls-last{background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:12px;padding:8px 12px;margin-bottom:12px;font-size:14px}
+.ls-last summary{cursor:pointer;font-weight:700;color:#334155}
+.ls-last div div{padding:3px 0;border-bottom:1px dashed #E2E8F0;line-height:1.5}
+.ls-sec{font-size:18px;font-weight:700;color:var(--dark);margin:18px 0 8px;display:flex;align-items:center;gap:8px}
+.ls-ok{font-size:12px;background:#DCFCE7;color:#166534;border-radius:999px;padding:1px 8px}
+.ls-cnt{font-size:12px;color:#B45309;background:#FFFBEB;border-radius:999px;padding:1px 7px;white-space:nowrap}
+.ls-held{color:#B91C1C}
+.ls-note{font-size:14px;color:#92400E;background:#FFFBEB;border-radius:10px;padding:8px 12px;margin-top:8px;line-height:1.5}
+.lc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:10px}
+.lc{display:flex;flex-direction:column;justify-content:space-between;gap:6px;width:100%;box-sizing:border-box;margin:0;font-size:14px;color:var(--ink-2);background:#F8FAFC;border-radius:10px;padding:9px 11px}
+.lc span{display:flex;align-items:center;gap:6px;font-size:15px;color:var(--dark)}
+.lc input{width:90px;padding:7px 9px;border:2px solid var(--line-strong);border-radius:8px;font-size:16px;font-family:inherit}
+.sm-pop-card{max-height:calc(100vh - 32px);overflow-y:auto;box-sizing:border-box}

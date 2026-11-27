@@ -304,7 +304,6 @@ function regenerateAllCodes(classCode) {
 // ==========================================
 function loginStudent(classCode, studentNo, studentCode) {
   try {
-    try { _collectWeeklyRent(classCode); } catch (re) {}   // 새 주가 되면 월세 자동으로 걷기 (잔액을 보여 주기 전에)
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = getOrCreateStudentsSheet(ss);
     var data = sheet.getDataRange().getValues();
@@ -447,7 +446,8 @@ function recordIncome(classCode, studentNo, memo, amount, type) {
     stuSheet.getRange(stuRowIdx,5).setValue(newCard);
     tSheet.appendRow([getTodayStr(), cc, sno, cleanText(memo), amt, '', newCard, type||'교사지급']);
     try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
-    return { success: true, msg: "지급 완료!", newCard: newCard };
+    var rp = _autoRepayAfterIncome(cc, [sno])[sno] || 0;   // 연체 월세부터 먼저 갚음
+    return { success: true, msg: "지급 완료!" + (rp ? " (🏠 연체 월세 " + rp + " 머니 자동 상환)" : ""), newCard: newCard - rp };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
@@ -475,7 +475,9 @@ function recordIncomeBulk(classCode, memo, amount, type) {
     if (rows.length>0)
       tSheet.getRange(tSheet.getLastRow()+1,1,rows.length,8).setValues(rows);
     try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
-    return { success: true, msg: count + "명에게 " + amt + " 머니 지급 완료!" };
+    var rp = _autoRepayAfterIncome(cc, rows.map(function (r) { return r[2]; })), rpSum = 0;   // 연체 월세부터 먼저 갚음
+    Object.keys(rp).forEach(function (k) { rpSum += rp[k]; });
+    return { success: true, msg: count + "명에게 " + amt + " 머니 지급 완료!" + (rpSum ? " (🏠 연체 월세 " + Object.keys(rp).length + "명 · " + rpSum + " 머니 자동 상환)" : "") };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
@@ -1325,7 +1327,12 @@ function getRealEstateList(classCode) {
     for (var i=1; i<stuData.length; i++) {
       if (cleanText(stuData[i][0])===cc) nameMap[String(stuData[i][1])]=stuData[i][2]||'';
     }
-    if (_collectWeeklyRent(cc)) reData = reSheet.getDataRange().getValues();   // 새 주가 되면 월세 자동으로 걷기
+    // 연체 상태 (RentDebts): '자산번호|세입자' → 연체/분할
+    var dState = {}, dd = getOrCreateRentDebtSheet(ss).getDataRange().getValues();
+    for (var q = 1; q < dd.length; q++) if (cleanText(dd[q][0]) === cc && String(dd[q][10]) === '진행' && String(dd[q][11] || '월세') === '월세') {
+      var dk = String(dd[q][4]) + '|' + cleanText(String(dd[q][2]));
+      if (!(Number(dd[q][7]) > 0)) dState[dk] = '연체'; else if (!dState[dk]) dState[dk] = '분할';
+    }
     var list = [], fx = _newsEffects(cc);
     for (var j = 1; j < reData.length; j++) {
       if (cleanText(reData[j][0])===cc) {
@@ -1341,7 +1348,10 @@ function getRealEstateList(classCode) {
           tenantName: reData[j][8] !== '' && reData[j][8] != null ? (nameMap[String(reData[j][8])] || '') : '',
           leaseType:  String(reData[j][9] || ''),
           leaseAmt:   Number(reData[j][10]) || 0,
-          rentPaid:   String(reData[j][11] || '') === 'W' + _newsWeek(),   // 이번 주 월세를 냈는지
+          rentPaid:   String(reData[j][11] || '') === 'W' + _newsWeek(),   // 이번 주 월세 정산을 했는지
+          leaseState: dState[String(reData[j][1]) + '|' + cleanText(String(reData[j][8] == null ? '' : reData[j][8]))] || '정상',
+          isPublic:   String(reData[j][13] || '') === 'Y',   // 공공임대
+          lateCount:  Number(reData[j][12]) || 0,
           price:     _newsPrice(Number(reData[j][5])||0, fx.estate),
           rent:      _newsPrice(Number(reData[j][6])||0, fx.rent),
           basePrice: Number(reData[j][5])||0,
@@ -1364,7 +1374,7 @@ function addRealEstate(classCode, assetNo, name, type, price, rent, perk) {
     if (dup) return { success: false, msg: '자산 번호 ' + no + '은(는) 이미 있어요. 다른 번호를 적어 주세요.' };
     reSheet.appendRow([cc, no, name, type||'기타', '', Number(price)||0, Number(rent)||0, '매물']);
     perk = String(perk || '').trim().slice(0, SEAT_PERK_MAX);
-    if (perk) { var m = _seatLoad(cc); m.seats[no] = m.seats[no] || {}; m.seats[no].perk = perk; _seatSave(cc, m); }
+    if (perk) { var m = _seatLoad(cc); m.seats[no] = m.seats[no] || {}; m.seats[no].perks = [{ t: perk, k: 'user' }]; _seatSave(cc, m); }
     return { success: true, msg: "부동산 자산이 등록되었습니다." };
   } catch(e) { return { success: false, msg: e.message }; }
 }
@@ -1889,7 +1899,7 @@ function executeSmartPayroll(classCode, payrollJson) {
     var stuData = stuSheet.getDataRange().getValues();
     var cc = cleanText(classCode);
     var payroll = typeof payrollJson === 'string' ? JSON.parse(payrollJson) : (payrollJson || []);
-    var today = getTodayStr(), count = 0, rows = [], total = 0, missing = [];
+    var today = getTodayStr(), count = 0, rows = [], total = 0, missing = [], paidSnos = [], rentCaps = {};
     for (var p = 0; p < payroll.length; p++) {
       var item = payroll[p];
       if (!item || item.studentNo === null || item.studentNo === undefined || String(item.studentNo) === '') continue;
@@ -1908,6 +1918,7 @@ function executeSmartPayroll(classCode, payrollJson) {
       stuData[stuRowIdx-1][4] = newCard;   // 같은 학생이 두 번 있어도 누적되게
       rows.push([today, cc, sno, '[스마트월급] 실수령액 '+net+'머니', net>0?net:'', net<0?Math.abs(net):'', newCard, '스마트월급']);
       count++; total += net;
+      if (net > 0) { paidSnos.push(sno); if (item.rentRepay !== undefined && item.rentRepay !== null && item.rentRepay !== '') rentCaps[sno] = Number(item.rentRepay) || 0; }
     }
     if (count === 0) {
       return { success: false, msg: missing.length
@@ -1917,7 +1928,10 @@ function executeSmartPayroll(classCode, payrollJson) {
     for (var w = 0; w < rows.length; w++) tSheet.appendRow(rows[w]);
     try { CacheService.getScriptCache().removeAll(['students_'+cc]); } catch(ce){}
     SpreadsheetApp.flush();
-    return { success: true, msg: count+'명에게 총 '+total+'머니 스마트 월급 지급 완료!' + (missing.length ? ' (찾지 못한 번호: '+missing.join(', ')+')' : ''), count: count, total: total };
+    // 연체 월세: 월급 명세서의 '🏠 연체 월세 상환' 칸 금액만큼 (칸이 없으면 갚을 수 있는 만큼) 먼저 갚음
+    var rp = _autoRepayAfterIncome(cc, paidSnos, rentCaps), rpSum = 0;
+    Object.keys(rp).forEach(function (k) { rpSum += rp[k]; });
+    return { success: true, msg: count+'명에게 총 '+total+'머니 스마트 월급 지급 완료!' + (rpSum ? '\n🏠 연체 월세 ' + Object.keys(rp).length + '명 · ' + rpSum + ' 머니를 먼저 갚았어요.' : '') + (missing.length ? ' (찾지 못한 번호: '+missing.join(', ')+')' : ''), count: count, total: total, rentRepaid: rp };
   } catch(e) { return { success: false, msg: e.message }; }
 }
 
@@ -3379,6 +3393,8 @@ function resetClassEconomy(classCode) {
     var hwCnt      = _clearSheetForClass('Homework', cc);
     var hwStCnt    = _clearSheetForClass('HomeworkStatus', cc);
     _clearSheetForClass('Newsroom', cc);   // 뉴스룸 속보도 해제
+    _clearSheetForClass('RentDebts', cc);  // 연체 월세
+    try { var smR = _seatLoad(cc); smR.assign = {}; smR.unseated = []; smR.lastSettle = null; _seatSave(cc, smR); } catch (se) {}   // 랜덤 자리 결과
 
     // 4. 부동산은 매물 정보(이름/가격 등)는 유지, 소유권만 초기화
     var reSheet = ss.getSheetByName('RealEstate');
@@ -3389,7 +3405,7 @@ function resetClassEconomy(classCode) {
         if (cleanText(reData[j][0]) === cc) {
           reSheet.getRange(j+1, 5).setValue('');      // 소유자학생번호
           reSheet.getRange(j+1, 8).setValue('매물');  // 상태
-          reSheet.getRange(j+1, 9, 1, 4).setValues([['', '', '', '']]);  // 세입자·임대방식·전세금·월세 낸 주
+          reSheet.getRange(j+1, 9, 1, 8).setValues([['', '', '', '', '', '', '', '']]);  // 세입자·방식·보증금·정산 주·연체 횟수·공공임대·보류액·지급 주
           reCount++;
         }
       }
@@ -5079,95 +5095,6 @@ function resetNews(classCode) {
 
 
 // ==========================================
-// [부동산] 학급 자리 배치도 — 부동산 중개소 → 매물 등록
-//  - 종류가 '자리'인 매물이 교실 그림의 책상으로 보이고, 누르면 혜택·가격·소유자가 나옴
-//  - 선생님만 책상·칠판·교탁 등을 옮기고, 자리 혜택을 씀 (byTeacher)
-// SeatMap: [0]학급코드 [1]배치JSON {seats:{자산번호:{x,y,perk}}, items:[{id,kind,x,y}]}
-//  x, y는 교실 그림 안의 위치(%, 0~100). 위치가 없는 자리는 화면이 빈 곳에 줄 맞춰 놓음
-// ==========================================
-var SEAT_PERK_MAX = 120;
-var SEAT_KINDS = ['board', 'tdesk', 'door', 'window', 'locker', 'plant', 'tv'];
-function _seatDefault() {
-  return { seats: {}, items: [
-    { id: 'board', kind: 'board', x: 50, y: 7 }, { id: 'tdesk', kind: 'tdesk', x: 50, y: 17 },
-    { id: 'door', kind: 'door', x: 96, y: 93 }, { id: 'win1', kind: 'window', x: 2, y: 35 }, { id: 'win2', kind: 'window', x: 2, y: 72 }
-  ] };
-}
-function _seatLoad(classCode) {
-  var cc = cleanText(classCode), sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SeatMap'), m = null;
-  if (sheet) {
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { try { m = JSON.parse(String(data[i][1] || '')); } catch (e) { m = null; } break; }
-  }
-  m = m || _seatDefault();
-  m.seats = m.seats || {}; m.items = m.items || [];
-  return m;
-}
-function _seatSave(classCode, m) {
-  var cc = cleanText(classCode), ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName('SeatMap');
-  if (!sheet) { sheet = ss.insertSheet('SeatMap'); sheet.appendRow(['학급코드', '배치JSON']); }
-  var data = sheet.getDataRange().getValues(), json = JSON.stringify(m);
-  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(json); return; }
-  sheet.appendRow([cc, json]);
-}
-function _seatPos(v) { v = Number(v); return isFinite(v) ? Math.max(2, Math.min(98, Math.round(v * 10) / 10)) : null; }
-
-// 자리 배치도: 자리 매물(이름·가격·소유자·혜택·위치) + 칠판 같은 가구
-function getSeatMap(classCode) {
-  try {
-    var r = getRealEstateList(classCode);
-    if (!r.success) return r;
-    var m = _seatLoad(classCode);
-    var seats = r.list.filter(function (x) { return String(x.type).trim() === '자리'; }).map(function (x) {
-      var s = m.seats[String(x.assetNo).trim()] || {};
-      return { assetNo: String(x.assetNo).trim(), name: x.name, price: x.price, rent: x.rent, basePrice: x.basePrice, status: String(x.status || ''),
-        ownerNo: x.ownerNo, ownerName: String(x.status) === '매물' ? '' : x.ownerName, x: s.x == null ? null : s.x, y: s.y == null ? null : s.y, perk: s.perk || '',
-        tenantNo: x.tenantNo, tenantName: x.tenantName, leaseType: x.leaseType, leaseAmt: x.leaseAmt, rentPaid: x.rentPaid };
-    });
-    return { success: true, seats: seats, items: m.items };
-  } catch (e) { return { success: false, msg: e.message }; }
-}
-
-// 선생님이 옮긴 위치 저장. layout = {seats:{자산번호:{x,y}}, items:[{id,kind,x,y}]}
-function saveSeatLayout(classCode, layout, byTeacher) {
-  try {
-    if (byTeacher !== true) return { success: false, msg: '자리 배치는 선생님만 바꿀 수 있어요.' };
-    var m = _seatLoad(classCode), L = layout || {}, items = [];
-    Object.keys(L.seats || {}).slice(0, 100).forEach(function (no) {
-      var p = L.seats[no] || {}, x = _seatPos(p.x), y = _seatPos(p.y);
-      if (x === null || y === null) return;
-      no = String(no).trim().slice(0, 30);
-      m.seats[no] = m.seats[no] || {}; m.seats[no].x = x; m.seats[no].y = y;
-    });
-    (L.items || []).slice(0, 40).forEach(function (it, i) {
-      var x = _seatPos(it && it.x), y = _seatPos(it && it.y);
-      if (!it || SEAT_KINDS.indexOf(it.kind) < 0 || x === null || y === null) return;
-      items.push({ id: String(it.id || it.kind + i).replace(/[^\w-]/g, '').slice(0, 30) || (it.kind + i), kind: it.kind, x: x, y: y });
-    });
-    m.items = items;
-    _seatSave(classCode, m);
-    var r = getSeatMap(classCode); r.msg = '자리 배치를 저장했어요.';
-    return r;
-  } catch (e) { return { success: false, msg: e.message }; }
-}
-
-// 선생님이 자리 혜택 쓰기 (빈칸이면 혜택 지움)
-function setSeatPerk(classCode, assetNo, perk, byTeacher) {
-  try {
-    if (byTeacher !== true) return { success: false, msg: '자리 혜택은 선생님만 쓸 수 있어요.' };
-    var no = String(assetNo || '').trim();
-    if (!no) return { success: false, msg: '자리를 골라 주세요.' };
-    var m = _seatLoad(classCode);
-    m.seats[no] = m.seats[no] || {};
-    m.seats[no].perk = String(perk || '').trim().slice(0, SEAT_PERK_MAX);
-    _seatSave(classCode, m);
-    var r = getSeatMap(classCode); r.msg = m.seats[no].perk ? '자리 혜택을 저장했어요.' : '자리 혜택을 지웠어요.';
-    return r;
-  } catch (e) { return { success: false, msg: e.message }; }
-}
-
-
-// ==========================================
 // [경찰서] 벌금 수익 국고 환수 보고 — 부과된 벌금 총액의 10%를 국고에 납부 (도매상 법인세와 같은 방식)
 //  적립액 = 벌금 총액의 10% − 이미 납부한 '[벌금 환수]' 국고 기록 합계
 //  (따로 시트 없이 매번 계산 → 벌금을 지우거나 국고 기록을 지워도 숫자가 저절로 맞음)
@@ -5216,76 +5143,572 @@ function payFineTreasury(classCode, studentNo) {
 
 
 // ==========================================
-// [부동산] 매물 수정 — 이름·종류·가격·임대료·소유자·세입자(월세/전세)
-//  선생님(byTeacher) 또는 부동산 중개인 학생(editorSno)만
-//  d = {name, type, price, rent, ownerNo, tenantNo, leaseType, leaseAmt}
-//  소유자 없음 → 매물(세입자도 지움) / 소유자만 → 소유 / 소유자+세입자 → 임대중
-//  돈: 세입자가 새로 정해지면 월세 첫 주치(또는 전세금)를 세입자 → 소유자 카드로 옮김.
-//      전세가 끝나면(세입자·소유자·전세금이 바뀌거나 매물로) 전세금을 소유자 → 세입자로 돌려줌.
-//      이름·가격만 고치면 돈은 그대로. 매주 월세는 _collectWeeklyRent가 걷음.
+// [부동산] 학급 자리 배치도 · 임대 계약 · 월세 정산 · 랜덤 자리
+//  핵심 원칙: 월세는 임대 계약을 맺은 사람만 낸다. 랜덤으로 배정된 자리는 항상 무료다.
+//
+// 자리 종류
+//  - 소유 자리: RealEstate 종류 '자리' (사고팔고 빌려줌)
+//  - 공용 자리 / 교사배정 자리: SeatMap.desks (사고팔 수 없음, 무료)
+//
+// SeatMap: [0]학급코드 [1]배치JSON
+//   { seats:{자산번호:{x,y,perks:[{t,k}]}},  k = 'user'(앉은 사람 혜택) | 'owner'(주인 혜택)
+//     items:[{id,kind,x,y}],                   칠판·교탁 같은 가구
+//     desks:[{id,kind:'public'|'teacher',x,y,assignNo}],
+//     assign:{'RE:자산번호'|'D:책상id': 학생번호}, assignAt, unseated:[번호],   랜덤 자리 결과
+//     cfg:{pubPct,capPct,lateFee,graceDays,creditPenalty}, lastSettle:{at,wk,log,alerts} }
+//
+// RealEstate 열: [0]학급코드 [1]자산번호 [2]자산명 [3]종류 [4]소유자 [5]가격 [6]임대료/주 [7]상태(매물/소유/임대중)
+//   [8]세입자 [9]방식(월세/전세) [10]보증금(남은 돈, 주인이 맡아 둠) [11]월세 정산한 주('W'+월요일)
+//   [12]연속 연체 횟수 [13]공공임대('Y') [14]공공임대 보류액(국고가 모자라 못 준 돈) [15]공공임대 지급한 주
+//
+// RentDebts: [0]학급코드 [1]ID [2]낼 사람 [3]받을 사람 [4]자산번호 [5]남은 금액 [6]시작일 [7]분할 1회 금액(0=한 번에)
+//   [8]분할 낸 주 [9]연체료(갚을 때 더함) [10]상태(진행/완료) [11]종류(월세/보증금 반환) [12]신용 반영('Y')
 // ==========================================
-function editRealEstate(classCode, assetNo, d, byTeacher, editorSno) {
+var SEAT_PERK_MAX = 120;
+var SEAT_KINDS = ['board', 'tdesk', 'door', 'window', 'locker', 'plant', 'tv'];
+var LEASE_CFG_DEFAULT = { pubPct: 50, capPct: 30, lateFee: 50, graceDays: 3, creditPenalty: 5 };
+function _seatDefault() {
+  return { seats: {}, items: [
+    { id: 'board', kind: 'board', x: 50, y: 7 }, { id: 'tdesk', kind: 'tdesk', x: 50, y: 17 },
+    { id: 'door', kind: 'door', x: 96, y: 93 }, { id: 'win1', kind: 'window', x: 2, y: 35 }, { id: 'win2', kind: 'window', x: 2, y: 72 }
+  ] };
+}
+function _seatLoad(classCode) {
+  var cc = cleanText(classCode), sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SeatMap'), m = null;
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { try { m = JSON.parse(String(data[i][1] || '')); } catch (e) { m = null; } break; }
+  }
+  m = m || _seatDefault();
+  m.seats = m.seats || {}; m.items = m.items || []; m.desks = m.desks || []; m.assign = m.assign || {};
+  return m;
+}
+function _seatSave(classCode, m) {
+  var cc = cleanText(classCode), ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName('SeatMap');
+  if (!sheet) { sheet = ss.insertSheet('SeatMap'); sheet.appendRow(['학급코드', '배치JSON']); }
+  var data = sheet.getDataRange().getValues(), json = JSON.stringify(m);
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) { sheet.getRange(i + 1, 2).setValue(json); return; }
+  sheet.appendRow([cc, json]);
+}
+function _seatPos(v) { v = Number(v); return isFinite(v) ? Math.max(2, Math.min(98, Math.round(v * 10) / 10)) : null; }
+function _leaseCfg(m) {
+  var c = (m && m.cfg) || {}, o = {};
+  Object.keys(LEASE_CFG_DEFAULT).forEach(function (k) { o[k] = (c[k] === undefined || c[k] === null || c[k] === '') ? LEASE_CFG_DEFAULT[k] : Number(c[k]); });
+  return o;
+}
+function _seatPerks(s) { return (s && s.perks) || (s && s.perk ? [{ t: s.perk, k: 'user' }] : []); }
+function _sNo(v) { return cleanText(String(v == null ? '' : v)); }
+function _dayNum(s) { var p = String(s || '').split('-'); return p.length === 3 ? Date.UTC(+p[0], +p[1] - 1, +p[2]) / 864e5 : NaN; }
+function _reNames(ss, cc) {
+  var data = getOrCreateStudentsSheet(ss).getDataRange().getValues(), o = {};
+  for (var i = 1; i < data.length; i++) if (cleanText(data[i][0]) === cc) o[_sNo(data[i][1])] = { name: String(data[i][2] || ''), job: String(data[i][3] || '') };
+  return o;
+}
+function _isRealtor(names, sno) { var s = names[_sNo(sno)]; return !!s && s.job.split(/\s*,\s*/).indexOf('부동산 중개인') !== -1; }
+
+// ── 연체금(RentDebts) ──
+function getOrCreateRentDebtSheet(ss) {
+  var sheet = ss.getSheetByName('RentDebts');
+  if (!sheet) { sheet = ss.insertSheet('RentDebts'); sheet.appendRow(['학급코드', 'ID', '낼사람', '받을사람', '자산번호', '남은금액', '시작일', '분할1회', '분할낸주', '연체료', '상태', '종류', '신용반영']); }
+  return sheet;
+}
+// 정산·상환에 함께 쓰는 묶음: 학생 카드(money), 연체금 목록, 설정, 이번 주
+function _leaseCtx(classCode) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), m = _seatLoad(cc);
+  var dSheet = getOrCreateRentDebtSheet(ss), dd = dSheet.getDataRange().getValues(), debts = [];
+  for (var i = 1; i < dd.length; i++) if (cleanText(dd[i][0]) === cc && String(dd[i][10]) === '진행')
+    debts.push({ row: i + 1, id: String(dd[i][1]), payer: _sNo(dd[i][2]), payee: _sNo(dd[i][3]), asset: String(dd[i][4]), amount: Number(dd[i][5]) || 0,
+      created: String(dd[i][6] || ''), perWeek: Number(dd[i][7]) || 0, paidWeek: String(dd[i][8] || ''), fee: Number(dd[i][9]) || 0,
+      status: '진행', kind: String(dd[i][11] || '월세'), penalized: String(dd[i][12] || '') === 'Y' });
+  return { ss: ss, cc: cc, m: m, cfg: _leaseCfg(m), money: _reMoney(ss, cc), debts: debts, dSheet: dSheet, added: [],
+    wk: 'W' + _newsWeek(), today: getTodayStr() };
+}
+// 분할 상환: 이번 주에 이미 낸 금액 (paidWeek = 'W월요일|금액')
+function _planPaid(d, wk) { var p = String(d.paidWeek || '').split('|'); return p[0] === wk ? (p.length > 1 ? Number(p[1]) || 0 : d.perWeek) : 0; }
+function _planDue(d, wk) { return Math.max(0, Math.min(d.perWeek - _planPaid(d, wk), d.amount)); }
+function _debtAdd(ctx, payer, payee, asset, amount, fee, kind) {
+  var d = { row: 0, id: 'D' + Date.now().toString(36) + Math.floor(Math.random() * 1e4), payer: payer, payee: payee, asset: String(asset), amount: amount,
+    created: ctx.today, perWeek: 0, paidWeek: '', fee: fee || 0, status: '진행', kind: kind || '월세', penalized: false, dirty: true };
+  ctx.debts.push(d); ctx.added.push(d);
+  return d;
+}
+function _leaseCommit(ctx) {
+  ctx.money.commit();
+  ctx.debts.forEach(function (d) {
+    var row = [d.amount, d.created, d.perWeek, d.paidWeek, d.fee, d.status, d.kind, d.penalized ? 'Y' : ''];
+    if (!d.row) ctx.dSheet.appendRow([ctx.cc, d.id, d.payer, d.payee, d.asset].concat(row));
+    else if (d.dirty) ctx.dSheet.getRange(d.row, 6, 1, 8).setValues([row]);
+  });
+}
+// 이 학생이 낼 연체금을 카드에서 갚음 (오래된 것부터). cap = 이번에 갚을 수 있는 최대 금액(없으면 카드 잔액만큼)
+//  한 번에 갚는 연체금은 연체료를 먼저, 분할 상환은 이번 주 몫(1회 금액)만
+function _repayDebts(ctx, sno, cap) {
+  var paid = 0;
+  ctx.debts.forEach(function (d) {
+    if (d.status !== '진행' || d.payer !== sno) return;
+    var room = Math.min(ctx.money.card(sno), cap == null ? Infinity : cap - paid);
+    if (room <= 0) return;
+    var want = d.perWeek > 0 ? _planDue(d, ctx.wk) : d.amount + d.fee;
+    var pay = Math.min(room, want);
+    if (pay <= 0) return;
+    var fee = d.perWeek > 0 ? 0 : Math.min(d.fee, pay);
+    var label = d.kind === '보증금 반환' ? '[보증금 반환] ' : d.perWeek > 0 ? '[연체 월세 분할 상환] ' : '[연체 월세 상환] ';
+    if (ctx.money.move(sno, d.payee, pay, label + d.asset + (fee ? ' (연체료 ' + fee + ' 포함)' : ''))) return;   // 받을 사람이 없으면 건너뜀
+    d.fee -= fee; d.amount -= pay - fee; d.dirty = true; paid += pay;
+    if (d.perWeek > 0) d.paidWeek = ctx.wk + '|' + (_planPaid(d, ctx.wk) + pay);
+    if (d.amount <= 0 && d.fee <= 0) { d.amount = 0; d.fee = 0; d.status = '완료'; }
+  });
+  return paid;
+}
+// 돈을 받은 학생(월급·지급)의 연체금을 먼저 갚음. caps = {학생번호: 최대 금액} (월급 명세서에서 적은 금액)
+function _autoRepayAfterIncome(classCode, snos, caps) {
+  try {
+    var ctx = _leaseCtx(classCode), out = {}, any = false;
+    if (!ctx.debts.length) return out;
+    snos.forEach(function (s) {
+      s = _sNo(s);
+      var cap = caps && caps[s] !== undefined && caps[s] !== null && caps[s] !== '' ? Math.max(0, Number(caps[s]) || 0) : null;
+      var p = _repayDebts(ctx, s, cap); if (p > 0) { out[s] = p; any = true; }
+    });
+    if (any) { _leaseCommit(ctx); SpreadsheetApp.flush(); }
+    return out;
+  } catch (e) { return {}; }
+}
+// 학생별로 지금 갚아야 할 연체금 (월급 명세서·화면 표시용)
+function _debtDueBySno(ctx) {
+  var o = {};
+  ctx.debts.forEach(function (d) {
+    if (d.status !== '진행') return;
+    var due = d.perWeek > 0 ? _planDue(d, ctx.wk) : d.amount + d.fee;
+    var x = o[d.payer] = o[d.payer] || { due: 0, total: 0, plan: false };
+    x.due += due; x.total += d.amount + d.fee; if (d.perWeek > 0) x.plan = true;
+  });
+  return o;
+}
+
+// ── 부동산 시트 행 읽기/쓰기 (자리 계약 정보) ──
+function _reRows(ss, cc) {
+  var sheet = getOrCreateRealEstateSheet(ss), data = sheet.getDataRange().getValues(), rows = [];
+  for (var j = 1; j < data.length; j++) if (cleanText(data[j][0]) === cc) {
+    var r = data[j].slice(0); while (r.length < 16) r.push('');
+    rows.push({ row: j + 1, r: r });
+  }
+  return { sheet: sheet, rows: rows };
+}
+function _reRowsSave(R) {
+  R.rows.forEach(function (o) { if (o.dirty) R.sheet.getRange(o.row, 8, 1, 9).setValues([o.r.slice(7, 16)]); });
+}
+// 주인 → 세입자 보증금 돌려주기 (주인 잔액이 모자라면 남은 돈은 '보증금 반환' 빚으로)
+function _refundDeposit(ctx, owner, tenant, asset, dep, log) {
+  if (dep <= 0) return;
+  var part = Math.min(dep, ctx.money.card(owner));
+  if (part > 0) ctx.money.move(owner, tenant, part, '[보증금 반환] ' + asset);
+  if (dep - part > 0) { _debtAdd(ctx, owner, tenant, asset, dep - part, 0, '보증금 반환'); log.push('⚠️ ' + ctx.money.name(owner) + '의 잔액이 모자라 보증금 ' + (dep - part) + ' 머니는 빚으로 남겼어요.'); }
+}
+// 이 계약의 연체 월세를 보증금에서 빼서 주인에게 (주인이 이미 보증금을 맡고 있으므로 돈은 움직이지 않음) + 신용 하락
+function _deductFromDeposit(ctx, o, d, log) {
+  var r = o.r, dep = Number(r[10]) || 0, take = Math.min(dep, d.amount);
+  if (take <= 0 && d.penalized) return;   // 이미 처리한 연체 (보증금도 없음)
+  r[10] = dep - take; o.dirty = true;
+  d.amount -= take; d.fee = 0; d.dirty = true;
+  if (d.amount <= 0) { d.amount = 0; d.status = '완료'; }
+  if (take > 0) ctx.money.note(d.payer, '[보증금 차감] ' + d.asset + ' 연체 월세 ' + take + ' 머니 (남은 보증금 ' + r[10] + ' 머니)');
+  var pen = !d.penalized && ctx.cfg.creditPenalty > 0;
+  if (pen) queuePendingCreditDelta(ctx.cc, d.payer, (ctx.money.name(d.payer) || '').replace(/^\S+번 /, ''), -ctx.cfg.creditPenalty);
+  d.penalized = true;
+  log.push('⏰ ' + ctx.money.name(d.payer) + ' · ' + d.asset + ' 연체 월세 ' + take + ' 머니를 보증금에서 뺐어요' +
+    (d.amount > 0 ? ' (보증금이 모자라 ' + d.amount + ' 머니는 빚으로 남음)' : '') + (pen ? ' · 신용 -' + ctx.cfg.creditPenalty + '점 대기' : ''));
+}
+// 계약 해지: 남은 연체 월세는 보증금에서 빼고, 남은 보증금은 돌려줌 → 세입자는 다음 랜덤 자리 대상
+function _terminateLease(ctx, o, why, log) {
+  var r = o.r, tenant = _sNo(r[8]), owner = _sNo(r[4]), asset = String(r[1]);
+  ctx.debts.forEach(function (d) { if (d.status === '진행' && d.kind === '월세' && d.perWeek === 0 && d.payer === tenant && d.asset === asset) _deductFromDeposit(ctx, o, d, log); });
+  _refundDeposit(ctx, owner, tenant, asset, Number(r[10]) || 0, log);
+  log.push('📤 ' + asset + ' ' + r[2] + ' 계약 해지 (' + why + ') → ' + ctx.money.name(tenant) + '은(는) 다음 랜덤 자리 대상이에요.');
+  r[7] = '소유'; r[8] = ''; r[9] = ''; r[10] = 0; r[11] = ''; r[12] = 0; o.dirty = true;
+}
+// 유예 기간이 지난 연체 → 보증금에서 빼기, 보증금이 바닥나면 해지
+function _processOverdue(ctx, R, log) {
+  ctx.debts.forEach(function (d) {
+    if (d.status !== '진행' || d.kind !== '월세' || d.perWeek > 0) return;
+    if (!(_dayNum(ctx.today) - _dayNum(d.created) >= ctx.cfg.graceDays)) return;
+    var o = R.rows.filter(function (x) { return String(x.r[1]) === d.asset && String(x.r[7]) === '임대중' && _sNo(x.r[8]) === d.payer; })[0];
+    if (!o) return;
+    _deductFromDeposit(ctx, o, d, log);
+    if ((Number(o.r[10]) || 0) <= 0) _terminateLease(ctx, o, '보증금이 바닥남', log);
+  });
+}
+
+// ==========================================
+// 자리 배치도 보기
+// ==========================================
+function getSeatMap(classCode) {
+  try {
+    var r = getRealEstateList(classCode);
+    if (!r.success) return r;
+    var cc = cleanText(classCode), m = _seatLoad(cc), names = _reNames(SpreadsheetApp.getActiveSpreadsheet(), cc);
+    var nm = function (s) { s = _sNo(s); return s && names[s] ? names[s].name : ''; };
+    var seats = r.list.filter(function (x) { return String(x.type).trim() === '자리'; }).map(function (x) {
+      var no = String(x.assetNo).trim(), s = m.seats[no] || {}, sale = String(x.status) === '매물';
+      var sitter = sale ? '' : x.tenantNo ? x.tenantNo : x.isPublic ? _sNo(m.assign['RE:' + no]) : _sNo(x.ownerNo);
+      if (sitter && !names[sitter]) sitter = '';
+      return { key: 'RE:' + no, assetNo: no, name: x.name, price: x.price, rent: x.rent, basePrice: x.basePrice, status: String(x.status || ''),
+        ownerNo: sale ? '' : _sNo(x.ownerNo), ownerName: sale ? '' : x.ownerName, x: s.x == null ? null : s.x, y: s.y == null ? null : s.y, perks: _seatPerks(s),
+        tenantNo: x.tenantNo, tenantName: x.tenantName, leaseType: x.leaseType, leaseAmt: x.leaseAmt, rentPaid: x.rentPaid, leaseState: x.leaseState,
+        isPublic: x.isPublic, sitter: sitter, sitterName: nm(sitter) };
+    });
+    var desks = m.desks.map(function (d) {
+      var sitter = d.kind === 'teacher' ? _sNo(d.assignNo) : _sNo(m.assign['D:' + d.id]);
+      if (sitter && !names[sitter]) sitter = '';
+      return { key: 'D:' + d.id, id: d.id, kind: d.kind, x: d.x, y: d.y, assignNo: _sNo(d.assignNo), sitter: sitter, sitterName: nm(sitter) };
+    });
+    return { success: true, seats: seats, items: m.items, desks: desks, assignAt: m.assignAt || '',
+      unseated: (m.unseated || []).map(function (s) { return { no: s, name: nm(s) }; }), cfg: _leaseCfg(m) };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 선생님이 옮긴 위치 저장. layout = {seats:{자산번호:{x,y}}, items:[{id,kind,x,y}], desks:[{id,kind,x,y}]}
+function saveSeatLayout(classCode, layout, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '자리 배치는 선생님만 바꿀 수 있어요.' };
+    var m = _seatLoad(classCode), L = layout || {}, items = [], desks = [], old = {};
+    Object.keys(L.seats || {}).slice(0, 100).forEach(function (no) {
+      var p = L.seats[no] || {}, x = _seatPos(p.x), y = _seatPos(p.y);
+      if (x === null || y === null) return;
+      no = String(no).trim().slice(0, 30);
+      m.seats[no] = m.seats[no] || {}; m.seats[no].x = x; m.seats[no].y = y;
+    });
+    (L.items || []).slice(0, 40).forEach(function (it, i) {
+      var x = _seatPos(it && it.x), y = _seatPos(it && it.y);
+      if (!it || SEAT_KINDS.indexOf(it.kind) < 0 || x === null || y === null) return;
+      items.push({ id: String(it.id || it.kind + i).replace(/[^\w-]/g, '').slice(0, 30) || (it.kind + i), kind: it.kind, x: x, y: y });
+    });
+    m.desks.forEach(function (d) { old[d.id] = d; });
+    (L.desks || []).slice(0, 60).forEach(function (d, i) {
+      var x = _seatPos(d && d.x), y = _seatPos(d && d.y);
+      if (!d || (d.kind !== 'public' && d.kind !== 'teacher') || x === null || y === null) return;
+      var id = String(d.id || 'dk' + i).replace(/[^\w-]/g, '').slice(0, 30) || ('dk' + i);
+      desks.push({ id: id, kind: d.kind, x: x, y: y, assignNo: d.kind === 'teacher' && old[id] ? (old[id].assignNo || '') : '' });
+    });
+    m.items = items; m.desks = desks;
+    var keep = {}; desks.forEach(function (d) { keep['D:' + d.id] = 1; });
+    Object.keys(m.assign).forEach(function (k) { if (k.indexOf('D:') === 0 && !keep[k]) delete m.assign[k]; });
+    _seatSave(classCode, m);
+    var r = getSeatMap(classCode); r.msg = '자리 배치를 저장했어요.';
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 선생님이 자리 혜택 쓰기. perks = [{t:'급식 먼저', k:'user'|'owner'}] (빈 배열이면 지움)
+//  user(사용자형) = 실제로 앉은 사람에게, owner(주인형) = 자리 주인에게
+function setSeatPerks(classCode, assetNo, perks, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '자리 혜택은 선생님만 쓸 수 있어요.' };
+    var no = String(assetNo || '').trim();
+    if (!no) return { success: false, msg: '자리를 골라 주세요.' };
+    var list = (perks || []).slice(0, 8).map(function (p) { return { t: String((p && p.t) || '').trim().slice(0, SEAT_PERK_MAX), k: p && p.k === 'owner' ? 'owner' : 'user' }; })
+      .filter(function (p) { return p.t; });
+    var m = _seatLoad(classCode);
+    m.seats[no] = m.seats[no] || {}; m.seats[no].perks = list; delete m.seats[no].perk;
+    _seatSave(classCode, m);
+    var r = getSeatMap(classCode); r.msg = list.length ? '자리 혜택 ' + list.length + '개를 저장했어요.' : '자리 혜택을 지웠어요.';
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+function setSeatPerk(classCode, assetNo, perk, byTeacher) {   // 예전 이름 (혜택 하나, 사용자형)
+  return setSeatPerks(classCode, assetNo, String(perk || '').trim() ? [{ t: perk, k: 'user' }] : [], byTeacher);
+}
+
+// 교사배정 자리에 학생 정하기 (학습 지원이 필요한 학생용 · 랜덤과 거래에서 빠짐). sno '' = 비우기
+function setTeacherDesk(classCode, deskId, studentNo, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '교사배정 자리는 선생님만 정할 수 있어요.' };
+    var cc = cleanText(classCode), m = _seatLoad(cc), sno = _sNo(studentNo), names = _reNames(SpreadsheetApp.getActiveSpreadsheet(), cc);
+    var d = m.desks.filter(function (x) { return x.id === String(deskId) && x.kind === 'teacher'; })[0];
+    if (!d) return { success: false, msg: '교사배정 자리를 찾을 수 없어요.' };
+    if (sno && !names[sno]) return { success: false, msg: sno + '번 학생을 찾을 수 없어요.' };
+    if (sno) {
+      m.desks.forEach(function (x) { if (x.kind === 'teacher' && x !== d && _sNo(x.assignNo) === sno) x.assignNo = ''; });
+      Object.keys(m.assign).forEach(function (k) { if (_sNo(m.assign[k]) === sno) delete m.assign[k]; });
+    }
+    d.assignNo = sno;
+    _seatSave(cc, m);
+    var r = getSeatMap(cc); r.msg = sno ? sno + '번 ' + names[sno].name + '을(를) 교사배정 자리에 앉혔어요.' : '교사배정 자리를 비웠어요.';
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 공공임대 등록/해제: 주인(본인) 또는 선생님. 등록한 자리는 랜덤 자리에 들어가고 앉은 학생은 무료,
+//  주인은 매주 정산 때 국고에서 시장 월세의 pubPct%를 받음
+function setPublicLease(classCode, assetNo, on, actorSno, byTeacher) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), R = _reRows(ss, cc), no = String(assetNo || '').trim();
+    var o = R.rows.filter(function (x) { return String(x.r[1]).trim() === no; })[0];
+    if (!o || String(o.r[3]).trim() !== '자리') return { success: false, msg: '자리를 찾을 수 없어요.' };
+    var owner = _sNo(o.r[4]);
+    if (!owner || String(o.r[7]) === '매물') return { success: false, msg: '주인이 있는 자리만 공공임대에 등록할 수 있어요.' };
+    if (byTeacher !== true && _sNo(actorSno) !== owner) return { success: false, msg: '자기 자리만 공공임대에 등록하거나 해제할 수 있어요.' };
+    if (on && String(o.r[7]) === '임대중') return { success: false, msg: '지금 세입자가 있는 자리예요. 계약이 끝난 뒤에 등록해 주세요.' };
+    o.r[13] = on ? 'Y' : ''; o.dirty = true;
+    _reRowsSave(R);
+    if (!on) { var m = _seatLoad(cc); delete m.assign['RE:' + no]; _seatSave(cc, m); }
+    SpreadsheetApp.flush();
+    var r = getSeatMap(cc);
+    r.msg = on ? no + ' ' + o.r[2] + '을(를) 공공임대에 등록했어요. 다음 랜덤 자리부터 다른 학생이 무료로 앉고, 매주 국고에서 월세의 ' + _leaseCfg(_seatLoad(cc)).pubPct + '%를 받아요.'
+               : no + ' ' + o.r[2] + '을(를) 공공임대에서 뺐어요.';
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 🎲 랜덤 자리 배치 (선생님)
+//  고정: 교사배정 자리 학생 → 그 자리 / 세입자 → 계약한 자리 / 주인 → 자기 자리(빌려주거나 공공임대가 아닌 자리)
+//  랜덤 학생: 위에 해당하지 않는 학생 / 랜덤 자리: 빈 공용 자리 + 공공임대에 등록된 빈 소유 자리 (모두 무료)
+function randomSeats(classCode, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '랜덤 자리 배치는 선생님만 할 수 있어요.' };
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), m = _seatLoad(cc), names = _reNames(ss, cc), R = _reRows(ss, cc);
+    var fixed = {}, assign = {}, pool = [];
+    m.desks.forEach(function (d) { var s = _sNo(d.assignNo); if (d.kind === 'teacher' && s && names[s] && !fixed[s]) fixed[s] = 'D:' + d.id; });
+    var seatRows = R.rows.filter(function (o) { return String(o.r[3]).trim() === '자리'; });
+    seatRows.forEach(function (o) { var t = _sNo(o.r[8]); if (String(o.r[7]) === '임대중' && t && names[t] && !fixed[t]) fixed[t] = 'RE:' + String(o.r[1]).trim(); });
+    seatRows.forEach(function (o) {
+      var w = _sNo(o.r[4]);
+      if (String(o.r[7]) === '소유' && String(o.r[13]) !== 'Y' && w && names[w] && !fixed[w]) fixed[w] = 'RE:' + String(o.r[1]).trim();
+    });
+    m.desks.forEach(function (d) { if (d.kind === 'public') pool.push('D:' + d.id); });
+    seatRows.forEach(function (o) { if (String(o.r[7]) === '소유' && String(o.r[13]) === 'Y') pool.push('RE:' + String(o.r[1]).trim()); });
+    var students = Object.keys(names).filter(function (s) { return s !== '0' && !fixed[s]; });
+    var shuffle = function (a) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; };
+    shuffle(students); shuffle(pool);
+    students.forEach(function (s, i) { if (i < pool.length) assign[pool[i]] = s; });
+    m.assign = assign; m.assignAt = getTodayStr();
+    m.unseated = students.slice(pool.length);
+    _seatSave(cc, m);
+    var r = getSeatMap(cc);
+    r.msg = '🎲 랜덤 자리 배치 완료! 랜덤 ' + Math.min(students.length, pool.length) + '명 · 고정 ' + Object.keys(fixed).length + '명' +
+      (m.unseated.length ? '\n⚠️ 공용 자리가 모자라 ' + m.unseated.length + '명이 자리를 못 받았어요. 자리 옮기기 → + 공용 자리로 책상을 더 넣고 다시 돌려 주세요.' : '');
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// ==========================================
+// 임대 계약 · 월세 정산 (선생님) · 연체 처리 · 분할 상환 · 설정
+// ==========================================
+function getLeaseBoard(classCode) {
+  try {
+    var ctx = _leaseCtx(classCode), cc = ctx.cc, R = _reRows(ctx.ss, cc), fx = _newsEffects(cc), names = _reNames(ctx.ss, cc);
+    var nm = function (s) { return s && names[s] ? s + '번 ' + names[s].name : (s ? s + '번' : ''); };
+    var contracts = [], publics = [];
+    R.rows.forEach(function (o) {
+      var r = o.r, asset = String(r[1]);
+      if (String(r[7]) === '임대중' && _sNo(r[8])) {
+        var t = _sNo(r[8]), open = ctx.debts.filter(function (d) { return d.status === '진행' && d.kind === '월세' && d.payer === t && d.asset === asset; });
+        var late = open.filter(function (d) { return d.perWeek === 0; })[0];
+        contracts.push({ assetNo: asset, name: String(r[2]), owner: nm(_sNo(r[4])), tenant: nm(t), tenantNo: t, type: String(r[9] || ''),
+          rent: String(r[9]) === '월세' ? _newsPrice(Number(r[6]) || 0, fx.rent) : 0, deposit: Number(r[10]) || 0,
+          paidWeek: String(r[11] || '') === ctx.wk, lateCount: Number(r[12]) || 0,
+          state: late ? '연체' : open.length ? '분할' : '정상',
+          graceLeft: late ? Math.max(0, ctx.cfg.graceDays - (_dayNum(ctx.today) - _dayNum(late.created))) : null });
+      }
+      if (String(r[13]) === 'Y' || (Number(r[14]) || 0) > 0)
+        publics.push({ assetNo: asset, name: String(r[2]), owner: nm(_sNo(r[4])), on: String(r[13]) === 'Y',
+          pay: Math.floor(_newsPrice(Number(r[6]) || 0, fx.rent) * ctx.cfg.pubPct / 100), held: Number(r[14]) || 0, paidWeek: String(r[15] || '') === ctx.wk });
+    });
+    var debts = ctx.debts.map(function (d) {
+      return { id: d.id, payer: nm(d.payer), payerNo: d.payer, payee: nm(d.payee), asset: d.asset, amount: d.amount, fee: d.fee, created: d.created,
+        perWeek: d.perWeek, kind: d.kind, paidThisWeek: d.perWeek > 0 && _planDue(d, ctx.wk) === 0, paidWeekAmt: d.perWeek > 0 ? _planPaid(d, ctx.wk) : 0,
+        days: _dayNum(ctx.today) - _dayNum(d.created), penalized: d.penalized };
+    });
+    var tr = getTreasuryStatus(cc);
+    return { success: true, cfg: ctx.cfg, contracts: contracts, debts: debts, publics: publics, wk: ctx.wk,
+      treasury: tr.success ? tr.balance : null, lastSettle: ctx.m.lastSettle || null };
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+function setLeaseConfig(classCode, cfg, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '설정은 선생님만 바꿀 수 있어요.' };
+    var m = _seatLoad(classCode), c = cfg || {}, o = {};
+    var lim = { pubPct: [0, 100], capPct: [1, 100], lateFee: [0, 100000], graceDays: [0, 30], creditPenalty: [0, 50] };
+    for (var k in lim) {
+      var v = Number(c[k]);
+      if (!isFinite(v) || v < lim[k][0] || v > lim[k][1]) return { success: false, msg: '설정 값이 올바르지 않아요. (' + k + ': ' + lim[k][0] + '~' + lim[k][1] + ')' };
+      o[k] = Math.round(v);
+    }
+    m.cfg = o; _seatSave(classCode, m);
+    var r = getLeaseBoard(classCode); r.msg = '임대 설정을 저장했어요.';
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// 💸 이번 주 월세 정산 (선생님 버튼) — 같은 주에 다시 눌러도 이미 정산한 계약은 건너뜀
+//  0) 낼 연체금이 있는 학생의 카드에 돈이 있으면 먼저 갚음 (분할 상환 이번 주 몫 포함)
+//  1) 유예 기간이 지난 연체 → 보증금에서 빼서 주인에게 + 신용 하락 대기, 보증금이 바닥나면 해지
+//  2) 월세 계약마다 이번 주 월세: 잔액이 되면 세입자 → 주인, 모자라면 '연체'(유예 시작) + 연속 연체 +1
+//  3) 2회 연속 연체 → 해지
+//  4) 공공임대: 국고 → 주인 (시장 월세 × pubPct%), 국고가 모자라면 보류하고 알림
+function settleRent(classCode, byTeacher) { return _runSettle(classCode, byTeacher, true); }
+// ⏰ 연체 처리 (선생님 버튼) — 위 0)·1)만
+function processOverdueNow(classCode, byTeacher) { return _runSettle(classCode, byTeacher, false); }
+function _runSettle(classCode, byTeacher, full) {
   var lock = LockService.getScriptLock();
   try {
+    if (byTeacher !== true) return { success: false, msg: '월세 정산은 선생님만 할 수 있어요.' };
     lock.waitLock(5000);
-    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), no = String(assetNo || '').trim();
-    var stuData = getOrCreateStudentsSheet(ss).getDataRange().getValues(), names = {};
-    for (var i = 1; i < stuData.length; i++) if (cleanText(stuData[i][0]) === cc) names[cleanText(String(stuData[i][1]))] = { name: stuData[i][2] || '', job: String(stuData[i][3] || '') };
-    var ed = names[cleanText(String(editorSno == null ? '' : editorSno))];
-    var realtor = ed && String(ed.job).split(/\s*,\s*/).indexOf('부동산 중개인') !== -1;
-    if (byTeacher !== true && !realtor) return { success: false, msg: '매물 수정은 선생님이나 부동산 중개인만 할 수 있어요.' };
-    d = d || {};
-    var name = String(d.name || '').trim().slice(0, 40), type = String(d.type || '').trim() || '기타';
-    var price = Number(d.price), rent = Number(d.rent || 0), amt = Number(d.leaseAmt || 0);
-    if (!name) return { success: false, msg: '자산 이름을 적어 주세요.' };
-    if (!isFinite(price) || price < 0 || !isFinite(rent) || rent < 0 || !isFinite(amt) || amt < 0) return { success: false, msg: '가격과 임대료는 0 이상의 숫자로 적어 주세요.' };
-    var owner = cleanText(String(d.ownerNo == null ? '' : d.ownerNo)), tenant = cleanText(String(d.tenantNo == null ? '' : d.tenantNo));
-    var lease = String(d.leaseType || '');
-    if (owner && !names[owner]) return { success: false, msg: owner + '번 학생을 찾을 수 없어요.' };
-    if (!owner) { tenant = ''; }
-    if (tenant) {
-      if (!names[tenant]) return { success: false, msg: tenant + '번 학생을 찾을 수 없어요.' };
-      if (tenant === owner) return { success: false, msg: '소유자와 세입자가 같아요. 다른 학생을 골라 주세요.' };
-      if (lease !== '월세' && lease !== '전세') return { success: false, msg: '월세인지 전세인지 골라 주세요.' };
-    } else { lease = ''; amt = 0; }
-    if (lease !== '전세') amt = 0;
-    var sheet = getOrCreateRealEstateSheet(ss), data = sheet.getDataRange().getValues(), row = -1;
-    for (var j = 1; j < data.length; j++) if (cleanText(data[j][0]) === cc && String(data[j][1]).trim() === no) { row = j + 1; break; }
-    if (row === -1) return { success: false, msg: '매물을 찾을 수 없어요.' };
-    price = Math.round(price); rent = Math.round(rent); amt = Math.round(amt);
-    var o = data[row - 1], oTenant = String(o[7]) === '임대중' ? cleanText(String(o[8] == null ? '' : o[8])) : '';
-    var old = { owner: cleanText(String(o[4] == null ? '' : o[4])), tenant: oTenant, lease: String(o[9] || ''), amt: Number(o[10]) || 0 };
-    var same = old.tenant && old.tenant === tenant && old.owner === owner && old.lease === lease && (lease !== '전세' || old.amt === amt);
-    var week = same ? String(o[11] || '') : '', money = _reMoney(ss, cc), err = '', moved = [];
-    if (!same) {
-      if (old.tenant && old.lease === '전세' && old.amt > 0) {
-        err = money.move(old.owner, old.tenant, old.amt, '[전세금 반환] ' + no + ' ' + name);
-        if (!err) moved.push('전세금 ' + old.amt.toLocaleString() + ' 머니를 ' + money.name(old.tenant) + '에게 돌려줌');
-      }
-      if (!err && tenant && lease === '전세' && amt > 0) {
-        err = money.move(tenant, owner, amt, '[전세금] ' + no + ' ' + name);
-        if (!err) moved.push('전세금 ' + amt.toLocaleString() + ' 머니를 ' + money.name(owner) + '에게 냄');
-      }
-      if (!err && tenant && lease === '월세') {
-        var r1 = _newsPrice(rent, _newsEffects(cc).rent);
-        if (r1 > 0) err = money.move(tenant, owner, r1, '[월세] ' + no + ' ' + name + ' (첫 주)');
-        if (!err) { week = 'W' + _newsWeek(); if (r1 > 0) moved.push('첫 주 월세 ' + r1.toLocaleString() + ' 머니를 ' + money.name(owner) + '에게 냄'); }
-      }
-      if (err) return { success: false, msg: err + '\n저장하지 않았어요. 돈은 그대로예요.' };
+    var ctx = _leaseCtx(classCode), cc = ctx.cc, R = _reRows(ctx.ss, cc), fx = _newsEffects(cc), log = [], alerts = [];
+    // 0) 먼저 갚기
+    var payers = {}; ctx.debts.forEach(function (d) { if (d.status === '진행') payers[d.payer] = 1; });
+    Object.keys(payers).forEach(function (s) { var p = _repayDebts(ctx, s, null); if (p > 0) log.push('💰 ' + ctx.money.name(s) + ' 연체금 ' + p + ' 머니를 갚았어요.'); });
+    // 1) 유예 지난 연체
+    _processOverdue(ctx, R, log);
+    if (full) {
+      // 2) 이번 주 월세
+      R.rows.forEach(function (o) {
+        var r = o.r;
+        if (String(r[7]) !== '임대중' || String(r[9]) !== '월세' || String(r[11] || '') === ctx.wk) return;
+        var tenant = _sNo(r[8]), owner = _sNo(r[4]), rent = _newsPrice(Number(r[6]) || 0, fx.rent), asset = String(r[1]);
+        if (rent > 0) {
+          if (ctx.money.card(tenant) >= rent && !ctx.money.move(tenant, owner, rent, '[월세] ' + asset + ' ' + r[2])) {
+            r[12] = 0; log.push('✅ ' + ctx.money.name(tenant) + ' → ' + ctx.money.name(owner) + ' 월세 ' + rent + ' 머니 (' + asset + ')');
+          } else {
+            _debtAdd(ctx, tenant, owner, asset, rent, ctx.cfg.lateFee, '월세');
+            r[12] = (Number(r[12]) || 0) + 1;
+            log.push('⏰ ' + ctx.money.name(tenant) + ' 월세 ' + rent + ' 머니 연체 (' + asset + ') · ' + ctx.cfg.graceDays + '일 안에 내면 연체료 ' + ctx.cfg.lateFee + ' 머니를 더해 처리 · 연속 연체 ' + r[12] + '회');
+          }
+        }
+        r[11] = ctx.wk; o.dirty = true;
+      });
+      // 3) 2회 연속 연체 → 해지
+      R.rows.forEach(function (o) { if (String(o.r[7]) === '임대중' && (Number(o.r[12]) || 0) >= 2) _terminateLease(ctx, o, '2회 연속 연체', log); });
+      // 4) 공공임대 국고 지급
+      var tr = getTreasuryStatus(cc), bal = tr.success ? tr.balance : 0, tSheet = getOrCreateTreasurySheet(ctx.ss);
+      R.rows.forEach(function (o) {
+        var r = o.r, on = String(r[13]) === 'Y', held = Number(r[14]) || 0, owner = _sNo(r[4]);
+        if ((!on && held <= 0) || !owner) return;
+        var cur = on && String(r[15] || '') !== ctx.wk ? Math.floor(_newsPrice(Number(r[6]) || 0, fx.rent) * ctx.cfg.pubPct / 100) : 0;
+        var due = cur + held;
+        if (on) r[15] = ctx.wk;
+        if (due <= 0) { o.dirty = true; return; }
+        if (bal >= due) {
+          tSheet.appendRow([cc, ctx.today, '[공공임대] ' + r[1] + ' ' + r[2] + ' 주인 ' + ctx.money.name(owner) + ' 월세 지원' + (held ? ' (보류분 ' + held + ' 포함)' : ''), '지출', due, '승인', '교사', ctx.today]);
+          ctx.money.give(owner, due, '[공공임대 월세] ' + r[1] + ' ' + r[2] + ' ← 국고');
+          bal -= due; r[14] = 0;
+          log.push('🏛️ 국고 → ' + ctx.money.name(owner) + ' 공공임대 월세 ' + due + ' 머니 (' + r[1] + ')');
+        } else {
+          r[14] = due;
+          alerts.push('🏛️ 국고가 모자라 ' + ctx.money.name(owner) + '의 공공임대 월세 ' + due + ' 머니(' + r[1] + ')를 보류했어요. (국고 ' + bal + ' 머니)');
+        }
+        o.dirty = true;
+      });
     }
-    var status = !owner ? '매물' : tenant ? '임대중' : '소유';
-    sheet.getRange(row, 3, 1, 10).setValues([[name, type, owner, price, rent, status, tenant, lease, amt, week]]);
-    money.commit();
+    _reRowsSave(R);
+    _leaseCommit(ctx);
+    if (full) { ctx.m.lastSettle = { at: ctx.today, wk: ctx.wk, log: log.slice(0, 80), alerts: alerts }; _seatSave(cc, ctx.m); }
     SpreadsheetApp.flush();
-    var who = !owner ? '매물(주인 없음)' : '소유자 ' + names[owner].name + (tenant ? ' · ' + lease + ' ' + names[tenant].name : '');
-    return { success: true, msg: no + ' ' + name + ' 수정 완료! (' + who + ')' + (moved.length ? '\n💸 ' + moved.join('\n💸 ') : '') };
+    var b = getLeaseBoard(cc);
+    b.log = log; b.alerts = alerts;
+    b.msg = (full ? '💸 이번 주 월세 정산 완료!' : '⏰ 연체 처리 완료!') + (log.length || alerts.length ? '\n' + log.concat(alerts).slice(0, 12).join('\n') + (log.length + alerts.length > 12 ? '\n…' : '') : '\n처리할 것이 없었어요.');
+    return b;
   } catch (e) {
     if (e.message.match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
     return { success: false, msg: e.message };
   } finally { lock.releaseLock(); }
 }
 
-// 학생 카드끼리 돈 옮기기 (부동산 월세·전세금). move()로 메모리에서 먼저 계산하고 commit()에서 한 번에 적음
+// 연체금을 분할 상환으로 바꾸기 (선생님). weeks 주에 나눠 갚음 — 연체료는 원금에 합치고, 보증금 차감·신용 하락 대상에서 빠짐
+//  weeks = 0 이면 분할을 풀고 한 번에 갚기로 (오늘부터 유예 기간 다시 시작)
+function setDebtPlan(classCode, payerNo, weeks, byTeacher) {
+  try {
+    if (byTeacher !== true) return { success: false, msg: '분할 상환은 선생님만 정할 수 있어요.' };
+    var w = parseInt(weeks, 10);
+    if (isNaN(w) || w < 0 || w > 20) return { success: false, msg: '0~20주로 적어 주세요. (0 = 분할 풀기)' };
+    var ctx = _leaseCtx(classCode), sno = _sNo(payerNo), n = 0;
+    ctx.debts.forEach(function (d) {
+      if (d.status !== '진행' || d.payer !== sno) return;
+      d.amount += d.fee; d.fee = 0;
+      if (w > 0) { d.perWeek = Math.ceil(d.amount / w); d.paidWeek = ''; }
+      else { d.perWeek = 0; d.created = ctx.today; }
+      d.dirty = true; n++;
+    });
+    if (!n) return { success: false, msg: '이 학생은 갚을 연체금이 없어요.' };
+    _leaseCommit(ctx); SpreadsheetApp.flush();
+    var r = getLeaseBoard(classCode);
+    r.msg = ctx.money.name(sno) + '의 연체금 ' + n + '건을 ' + (w > 0 ? w + '주에 나눠 갚기로 바꿨어요. 매주 정산 때와 돈을 받을 때 1회분씩 갚아요.' : '한 번에 갚기로 되돌렸어요. 오늘부터 유예 기간이 다시 시작돼요.');
+    return r;
+  } catch (e) { return { success: false, msg: e.message }; }
+}
+
+// ==========================================
+// [부동산] 매물 수정 — 이름·종류·가격·임대료·소유자·세입자(월세/전세)·보증금
+//  선생님(byTeacher) 또는 부동산 중개인 학생(editorSno)만
+//  d = {name, type, price, rent, ownerNo, tenantNo, leaseType, leaseAmt(보증금/전세금)}
+//  돈: 새 계약이면 보증금(전세금)을 세입자 → 주인. 계약이 끝나면 남은 보증금을 주인 → 세입자.
+//      월세는 선생님의 '이번 주 월세 정산'에서 걷음. 이름·가격만 고치면 돈은 그대로.
+//  안전장치: 주간 월세가 세입자 주급의 capPct%를 넘으면 계약 불가
+// ==========================================
+function editRealEstate(classCode, assetNo, d, byTeacher, editorSno) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), cc = cleanText(classCode), no = String(assetNo || '').trim();
+    var names = _reNames(ss, cc);
+    if (byTeacher !== true && !_isRealtor(names, editorSno)) return { success: false, msg: '매물 수정은 선생님이나 부동산 중개인만 할 수 있어요.' };
+    d = d || {};
+    var name = String(d.name || '').trim().slice(0, 40), type = String(d.type || '').trim() || '기타';
+    var price = Number(d.price), rent = Number(d.rent || 0), amt = Number(d.leaseAmt || 0);
+    if (!name) return { success: false, msg: '자산 이름을 적어 주세요.' };
+    if (!isFinite(price) || price < 0 || !isFinite(rent) || rent < 0 || !isFinite(amt) || amt < 0) return { success: false, msg: '가격과 임대료는 0 이상의 숫자로 적어 주세요.' };
+    var owner = _sNo(d.ownerNo), tenant = _sNo(d.tenantNo), lease = String(d.leaseType || '');
+    if (owner && !names[owner]) return { success: false, msg: owner + '번 학생을 찾을 수 없어요.' };
+    if (!owner) tenant = '';
+    if (tenant) {
+      if (!names[tenant]) return { success: false, msg: tenant + '번 학생을 찾을 수 없어요.' };
+      if (tenant === owner) return { success: false, msg: '소유자와 세입자가 같아요. 다른 학생을 골라 주세요.' };
+      if (lease !== '월세' && lease !== '전세') return { success: false, msg: '월세인지 전세인지 골라 주세요.' };
+    } else { lease = ''; amt = 0; }
+    var R = _reRows(ss, cc), o = R.rows.filter(function (x) { return String(x.r[1]).trim() === no; })[0];
+    if (!o) return { success: false, msg: '매물을 찾을 수 없어요.' };
+    price = Math.round(price); rent = Math.round(rent); amt = Math.round(amt);
+    var r = o.r, oTenant = String(r[7]) === '임대중' ? _sNo(r[8]) : '';
+    var old = { owner: _sNo(r[4]), tenant: oTenant, lease: String(r[9] || ''), amt: Number(r[10]) || 0 };
+    var same = old.tenant && old.tenant === tenant && old.owner === owner && old.lease === lease;
+    if (same && amt !== old.amt) return { success: false, msg: '계약 중에는 보증금을 바꿀 수 없어요. 바꾸려면 세입자를 빼서 계약을 끝낸 뒤 다시 맺어 주세요.' };
+    // 안전장치: 주간 월세 ≤ 세입자 주급 × capPct%
+    if (tenant && lease === '월세' && !same) {
+      var cfg = _leaseCfg(_seatLoad(cc)), st = getSalaryTable(cc), table = (st && st.table) || {};
+      var jobs = names[tenant].job.split(/\s*,\s*/).filter(String); if (!jobs.length) jobs = ['국민'];
+      var pay = jobs.reduce(function (s, j) { return s + (Number(table[j]) || Number(table['국민']) || 0); }, 0);
+      var weekRent = _newsPrice(rent, _newsEffects(cc).rent), limit = Math.floor(pay * cfg.capPct / 100);
+      if (weekRent > limit) return { success: false, msg: '계약할 수 없어요: 주간 월세 ' + weekRent + ' 머니가 ' + tenant + '번 ' + names[tenant].name + '의 주급(' + pay + ' 머니)의 ' + cfg.capPct + '%(' + limit + ' 머니)를 넘어요.\n월세를 낮추거나 다른 학생을 골라 주세요.' };
+    }
+    var ctx = _leaseCtx(cc), log = [], moved = [];
+    if (!same) {
+      if (old.tenant && old.amt > 0) { _refundDeposit(ctx, old.owner, old.tenant, no, old.amt, log); moved.push((old.lease === '전세' ? '전세금' : '보증금') + ' ' + old.amt + ' 머니를 ' + ctx.money.name(old.tenant) + '에게 돌려줌'); }
+      if (tenant && amt > 0) {
+        var err = ctx.money.move(tenant, owner, amt, '[' + (lease === '전세' ? '전세금' : '보증금') + '] ' + no + ' ' + name);
+        if (err) return { success: false, msg: err + '\n저장하지 않았어요. 돈은 그대로예요.' };
+        moved.push((lease === '전세' ? '전세금' : '보증금') + ' ' + amt + ' 머니를 ' + ctx.money.name(owner) + '에게 냄');
+      }
+    }
+    var ownerChanged = old.owner !== owner;
+    r[2] = name; r[3] = type; r[4] = owner; r[5] = price; r[6] = rent;
+    r[7] = !owner ? '매물' : tenant ? '임대중' : '소유';
+    r[8] = tenant; r[9] = lease; r[10] = same ? old.amt : amt;
+    if (!same) { r[11] = ''; r[12] = 0; }
+    if (tenant || ownerChanged || !owner) r[13] = '';
+    R.sheet.getRange(o.row, 3, 1, 14).setValues([r.slice(2, 16)]);
+    _leaseCommit(ctx);
+    SpreadsheetApp.flush();
+    var who = !owner ? '매물(주인 없음)' : '소유자 ' + names[owner].name + (tenant ? ' · ' + lease + ' ' + names[tenant].name : '');
+    return { success: true, msg: no + ' ' + name + ' 수정 완료! (' + who + ')' + (moved.length ? '\n💸 ' + moved.join('\n💸 ') : '') + (log.length ? '\n' + log.join('\n') : '') +
+      (tenant && lease === '월세' && !same ? '\n📅 월세는 선생님이 매주 "이번 주 월세 정산"을 누를 때 걷혀요.' : '') };
+  } catch (e) {
+    if (e.message.match(/lock/i)) return { success: false, msg: '🚦 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.' };
+    return { success: false, msg: e.message };
+  } finally { lock.releaseLock(); }
+}
+
+// 학생 카드끼리 돈 옮기기. move()/give()로 메모리에서 먼저 계산하고 commit()에서 한 번에 적음
 //  잔액이 모자라면 move()가 안내 글을 돌려주고 아무것도 바꾸지 않음
 function _reMoney(ss, cc) {
   var sheet = getOrCreateStudentsSheet(ss), data = sheet.getDataRange().getValues(), st = {}, rows = [], today = getTodayStr();
@@ -5293,6 +5716,7 @@ function _reMoney(ss, cc) {
     st[cleanText(String(data[i][1]))] = { row: i + 1, card: Number(data[i][4]) || 0, name: String(data[i][2] || ''), changed: false };
   return {
     name: function (sno) { var s = st[sno]; return s ? sno + '번 ' + s.name : sno + '번'; },
+    card: function (sno) { return st[sno] ? st[sno].card : 0; },
     move: function (from, to, amt, memo) {
       var a = st[from], b = st[to];
       if (!a || !b) return (a ? to : from) + '번 학생을 찾을 수 없어요.';
@@ -5302,36 +5726,25 @@ function _reMoney(ss, cc) {
       rows.push([today, cc, to, memo + ' ← ' + from + '번 ' + a.name, amt, '', b.card, '부동산']);
       return '';
     },
+    give: function (to, amt, memo) {   // 국고 등 바깥에서 들어오는 돈
+      var b = st[to]; if (!b) return to + '번 학생을 찾을 수 없어요.';
+      b.card += amt; b.changed = true;
+      rows.push([today, cc, to, memo, amt, '', b.card, '부동산']);
+      return '';
+    },
+    note: function (sno, memo) { var s = st[sno]; if (s) rows.push([today, cc, sno, memo, '', '', s.card, '부동산']); },
     commit: function () {
       if (!rows.length) return;
       Object.keys(st).forEach(function (k) { if (st[k].changed) sheet.getRange(st[k].row, 5).setValue(st[k].card); });
       var t = getOrCreateTransSheet(ss); rows.forEach(function (r) { t.appendRow(r); });
+      rows = [];
       try { CacheService.getScriptCache().removeAll(['students_' + cc]); } catch (ce) {}
     }
   };
 }
 
-// 매주 월세 자동으로 걷기: 이번 주(월요일 기준) 아직 안 낸 월세 세입자 → 소유자 카드
-//  부동산 화면·자리 배치도를 열 때, 학생이 로그인할 때 불림. 잔액이 모자라면 그 주는 못 걷고 다음에 다시 시도
-//  shortcut: 아무도 접속하지 않은 주는 걷지 않고 넘어감(밀린 월세를 한꺼번에 걷지 않음)
-function _collectWeeklyRent(classCode) {
-  var cc = cleanText(classCode), lock = LockService.getScriptLock();
-  if (!lock.tryLock(3000)) return false;
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = getOrCreateRealEstateSheet(ss), data = sheet.getDataRange().getValues();
-    var wk = 'W' + _newsWeek(), due = [];
-    for (var j = 1; j < data.length; j++)
-      if (cleanText(data[j][0]) === cc && String(data[j][7]) === '임대중' && String(data[j][9]) === '월세' && String(data[j][8] == null ? '' : data[j][8]) !== '' && String(data[j][11] || '') !== wk) due.push(j);
-    if (!due.length) return false;
-    var money = _reMoney(ss, cc), fx = _newsEffects(cc), paid = 0;
-    due.forEach(function (j) {
-      var amt = _newsPrice(Number(data[j][6]) || 0, fx.rent);
-      if (amt > 0 && money.move(cleanText(String(data[j][8])), cleanText(String(data[j][4])), amt, '[월세] ' + data[j][1] + ' ' + data[j][2])) return;   // 잔액 부족 → 다음에 다시
-      sheet.getRange(j + 1, 12).setValue(wk); paid++;
-    });
-    money.commit();
-    SpreadsheetApp.flush();
-    return paid > 0;
-  } catch (e) { return false; }
-  finally { lock.releaseLock(); }
+// 월급 명세서 '🏠 연체 월세 상환' 칸에 미리 채울 금액 {학생번호: {due, total, plan}}
+function getRentDues(classCode) {
+  try { var ctx = _leaseCtx(classCode); return { success: true, dues: _debtDueBySno(ctx), graceDays: ctx.cfg.graceDays }; }
+  catch (e) { return { success: false, msg: e.message }; }
 }

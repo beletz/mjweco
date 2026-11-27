@@ -1108,6 +1108,7 @@
             <div class="dt" onclick="walletTab('wt-store',this)">🏪 매점 시세표</div>
             <div class="dt" onclick="walletTab('wt-law',this)">📜 벌금 법전</div>
             <div class="dt" onclick="walletTab('wt-stock',this)">📈 나의 주식</div>
+            <div class="dt" onclick="walletTab('wt-seat',this)">🏫 우리 반 자리</div>
           </div>
         </div>
         <!-- 📚 내 과제 현황 -->
@@ -1147,6 +1148,8 @@
         <div class="tc" id="wt-store"><div id="wt-store-box"><div class="empty-msg">불러오는 중...</div></div></div>
         <!-- 📜 벌금 법전 -->
         <div class="tc" id="wt-law"><div id="wt-law-box"><div class="empty-msg">불러오는 중...</div></div></div>
+        <!-- 🏫 우리 반 자리 (seatmap.js) -->
+        <div class="tc" id="wt-seat"><div class="info-box">🏫 내가 앉는 자리에는 <b>나</b> 표시가 있어요. 내 자리를 누르면 혜택을 보고, 내가 주인인 자리는 🏛️ 공공임대에 등록할 수 있어요.</div><div id="wt-seat-box"><div class="empty-msg">불러오는 중...</div></div></div>
         <!-- 📈 나의 주식 -->
         <div class="tc" id="wt-stock">
           <div class="stk-top" style="margin-bottom:10px;">
@@ -1521,6 +1524,7 @@
       <div class="panel-tabs">
         <div class="panel-tab act" onclick="realtorTab('re-market',this)">🏪 매물 목록</div>
         <div class="panel-tab" onclick="realtorTab('re-register',this)">➕ 매물 등록</div>
+        <div class="panel-tab" onclick="realtorTab('re-lease',this)">📋 임대 계약 · 월세 정산</div>
       </div>
       <div class="panel-content act" id="re-market">
         <div class="sc">
@@ -1535,11 +1539,18 @@
           </div>
         </div>
       </div>
+      <!-- 📋 임대 계약 · 월세 정산 (app.js renderLeaseBoard) -->
+      <div class="panel-content" id="re-lease">
+        <div class="sc"><div class="st"><i class="fa-solid fa-file-contract" style="color:var(--orange);"></i> 임대 계약 · 월세 정산</div>
+          <div class="info-box">🏠 <b>월세는 임대 계약을 맺은 사람만 내요. 랜덤으로 배정된 자리(공용·공공임대)는 항상 무료예요.</b></div>
+          <div id="lease-box"><div class="empty-msg">불러오는 중...</div></div>
+        </div>
+      </div>
       <div class="panel-content" id="re-register">
         <!-- 우리 반 자리 배치도 (seatmap.js) -->
         <div class="sc">
           <div class="st"><i class="fa-solid fa-chair" style="color:var(--orange);"></i> 우리 반 자리 배치도
-            <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadSeatMap()"><i class="fa-solid fa-rotate-right"></i></button>
+            <button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="loadSeatMap('sm-box')"><i class="fa-solid fa-rotate-right"></i></button>
           </div>
           <div id="sm-box"><div class="empty-msg">불러오는 중...</div></div>
         </div>

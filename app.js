@@ -2279,7 +2279,8 @@ function realtorTab(id,el){
   document.querySelectorAll('#realtor-panel-wrap .panel-content').forEach(function(c){c.classList.remove('act')});
   el.classList.add('act');$(id).classList.add('act');
   if(id==='re-market')loadRealEstate();
-  if(id==='re-register'&&typeof loadSeatMap==='function')loadSeatMap(); // 자리 배치도 (seatmap.js)
+  if(id==='re-register'&&typeof loadSeatMap==='function')loadSeatMap('sm-box'); // 자리 배치도 (seatmap.js)
+  if(id==='re-lease')loadLeaseBoard();
 }
 
 function loadRealEstate(){
@@ -2291,7 +2292,7 @@ function loadRealEstate(){
     r.list.forEach(function(re){
       var canBuy=(re.status==='매물');
       h+='<tr><td>'+esc(re.assetNo)+'</td><td><strong>'+esc(re.name)+'</strong></td><td>'+esc(re.type)+'</td>'+
-        '<td>'+(re.tenantNo?'<strong>🪑 '+esc(re.tenantName)+'</strong> <span class="re-lease">'+esc(re.leaseType)+'</span><div class="re-owner-sm">소유자('+esc(re.ownerName)+')</div>':esc(re.ownerName||'국가'))+'</td><td><strong>'+Number(re.price).toLocaleString()+'</strong>'+(re.price!==re.basePrice?' <span class="nw-mark">📰 원래 '+re.basePrice.toLocaleString()+'</span>':'')+'</td>'+
+        '<td>'+(re.tenantNo?'<strong>🪑 '+esc(re.tenantName)+'</strong> <span class="re-lease">'+esc(re.leaseType)+'</span>'+(re.leaseState==='연체'?' <span class="re-late">연체</span>':re.leaseState==='분할'?' <span class="re-late plan">분할 상환</span>':'')+'<div class="re-owner-sm">소유자('+esc(re.ownerName)+')</div>':esc(re.ownerName||'국가'))+'</td><td><strong>'+Number(re.price).toLocaleString()+'</strong>'+(re.price!==re.basePrice?' <span class="nw-mark">📰 원래 '+re.basePrice.toLocaleString()+'</span>':'')+'</td>'+
         '<td>'+Number(re.rent).toLocaleString()+(re.rent!==re.baseRent?' <span class="nw-mark">📰 원래 '+re.baseRent.toLocaleString()+'</span>':'')+'</td>'+
         '<td><span style="color:'+(re.status==='매물'?'var(--green)':'var(--gray)')+';font-weight:600;">'+esc(re.status)+'</span></td>'+
         '<td>'+(canBuy&&!hasJob(_myJob,'부동산 중개인')?'<button class="btn btn-sm btn-green" onclick="doBuyRE(\''+re.assetNo+'\')"><i class="fa-solid fa-cart-shopping"></i> 구매</button>':'<span style="font-size:12px;color:var(--gray);">'+(re.status==='매물'?'중개인':re.status==='임대중'?'임대중':'소유됨')+'</span>')+'</td>'+
@@ -2306,12 +2307,103 @@ function doAddRealEstate(){
   if(!no||!name||!price)return alert('자산번호, 이름, 가격을 입력해 주세요.');
   google.script.run.withSuccessHandler(function(r){
     showToast(r.success?'✅ '+r.msg:'⚠️ '+r.msg);
-    if(r.success){$('re-no').value='';$('re-name').value='';$('re-price').value='';$('re-perk').value='';loadRealEstate();if(typeof loadSeatMap==='function')loadSeatMap();}
+    if(r.success){$('re-no').value='';$('re-name').value='';$('re-price').value='';$('re-perk').value='';loadRealEstate();if(typeof loadSeatMap==='function')loadSeatMap('sm-box');}
   }).addRealEstate(_cc||_adminCC,no,name,type,price,rent,perk);
 }
 
 // ── 매물 수정 창 (선생님 · 부동산 중개인). 자리 배치도(seatmap.js)에서도 엶 ──
-var _reList=[];
+var _reList=[], _leaseCap=30;
+
+// ============================================================
+// 📋 임대 계약 · 월세 정산 (부동산 중개소 탭) — 정산·연체 처리·분할·설정은 선생님만, 중개인은 보기만
+//  서버: getLeaseBoard · settleRent · processOverdueNow · setDebtPlan · setLeaseConfig
+// ============================================================
+var _lease=null;
+function loadLeaseBoard(){
+  var b=$('lease-box'); if(!b) return;
+  if(!_lease) b.innerHTML='<div class="empty-msg">불러오는 중...</div>';
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success){ b.innerHTML='<div class="empty-msg">불러오지 못했어요: '+esc(r&&r.msg)+'</div>'; return; }
+    _lease=r; _leaseCap=r.cfg.capPct; renderLeaseBoard();
+  }).withFailureHandler(function(e){ b.innerHTML='<div class="empty-msg">오류: '+esc(e.message)+'</div>'; }).getLeaseBoard(_cc||_adminCC);
+}
+function leaseRun(fn, args){
+  showLoading();
+  google.script.run.withSuccessHandler(function(r){
+    hideLoading();
+    if(!r||!r.success) return alert((r&&r.msg)||'하지 못했어요.');
+    _lease=r; _leaseCap=r.cfg.capPct; renderLeaseBoard();
+    if(fn==='settleRent'||fn==='processOverdueNow'){ loadRealEstate(); }
+  }).withFailureHandler(function(e){ hideLoading(); alert('오류: '+e.message); })[fn].apply(null,args);
+}
+async function leaseSettle(){
+  var c=_lease.cfg;
+  if(!await uiConfirm('💸 이번 주 월세 정산을 할까요?\n\n① 연체금이 있는 학생의 카드에 돈이 있으면 먼저 갚아요.\n② 유예 기간('+c.graceDays+'일)이 지난 연체는 보증금에서 빼서 주인에게 주고, 신용점수 -'+c.creditPenalty+'점을 신용위원회 대기에 올려요.\n③ 월세 계약마다 이번 주 월세를 세입자 → 주인으로 옮겨요. 잔액이 모자라면 연체(유예 '+c.graceDays+'일, 그 안에 내면 연체료 '+c.lateFee+' 머니)가 돼요.\n④ 2회 연속 연체이거나 보증금이 바닥나면 계약을 해지해요.\n⑤ 공공임대 자리 주인에게 국고에서 월세의 '+c.pubPct+'%를 줘요. 국고가 모자라면 보류해요.\n\n같은 주에 다시 눌러도 이미 정산한 계약은 건너뛰어요.')) return;
+  leaseRun('settleRent',[_cc||_adminCC,_isTeacher===true]);
+}
+async function leaseOverdue(){
+  if(!await uiConfirm('⏰ 연체 처리를 할까요?\n\n유예 기간이 지난 연체 월세를 보증금에서 빼서 주인에게 주고, 신용점수 하락을 신용위원회 대기에 올려요.\n보증금이 바닥난 계약은 해지돼요.')) return;
+  leaseRun('processOverdueNow',[_cc||_adminCC,_isTeacher===true]);
+}
+async function leasePlan(payerNo, name){
+  var v=await uiPrompt('📅 '+name+'의 연체금을 몇 주에 나눠 갚을까요?\n(1~20주 · 0을 적으면 분할을 풀고 한 번에 갚기로 되돌려요)\n\n분할로 바꾸면 연체료는 원금에 합쳐지고, 보증금 차감·신용 하락 대상에서 빠져요.\n매주 정산 때와 월급을 받을 때 1회분씩 갚아요.','3');
+  if(v===null||v===undefined||String(v).trim()==='') return;
+  leaseRun('setDebtPlan',[_cc||_adminCC,payerNo,parseInt(v,10),_isTeacher===true]);
+}
+function leaseCfgSave(){
+  var c={}; ['pubPct','capPct','lateFee','graceDays','creditPenalty'].forEach(function(k){ c[k]=($('lc-'+k)||{}).value; });
+  leaseRun('setLeaseConfig',[_cc||_adminCC,c,_isTeacher===true]);
+}
+function renderLeaseBoard(){
+  var b=$('lease-box'), r=_lease; if(!b||!r) return;
+  var t=_isTeacher===true, c=r.cfg, w=function(n){ return Number(n||0).toLocaleString()+' 머니'; }, h='';
+  if(t) h+='<div class="ls-actions"><button class="btn btn-green" onclick="leaseSettle()">💸 이번 주 월세 정산</button><button class="btn btn-outline" onclick="leaseOverdue()">⏰ 연체 처리</button>'+
+    '<button class="btn btn-outline btn-sm" onclick="loadLeaseBoard()"><i class="fa-solid fa-rotate-right"></i></button><span class="ls-tr">🏛️ 국고 '+(r.treasury==null?'-':w(r.treasury))+'</span></div>';
+  else h+='<div class="info-box">👀 월세 정산과 연체 처리는 선생님만 할 수 있어요. 여기서 계약과 연체 현황을 볼 수 있어요.</div>';
+  var holds=r.publics.filter(function(p){ return p.held>0; });
+  if(holds.length) h+='<div class="ls-alert">🏛️ <b>국고가 모자라 공공임대 월세 지급을 보류했어요.</b><br>'+holds.map(function(p){ return esc(p.assetNo+' '+p.name)+' · '+esc(p.owner)+' · '+w(p.held); }).join('<br>')+'<br>국고를 채운 뒤 <b>이번 주 월세 정산</b>을 다시 누르면 보류분까지 함께 지급돼요.</div>';
+  if(r.lastSettle){
+    var L=(r.lastSettle.alerts||[]).concat(r.lastSettle.log||[]);
+    h+='<details class="ls-last"'+(r.log?' open':'')+'><summary>📋 마지막 정산 '+esc(r.lastSettle.at)+' · '+L.length+'줄</summary><div>'+(L.length?L.map(function(x){ return '<div>'+esc(x)+'</div>'; }).join(''):'처리할 것이 없었어요.')+'</div></details>';
+  }
+  // 계약
+  h+='<div class="ls-sec">📄 임대 계약 <span class="pill">'+r.contracts.length+'건</span></div>';
+  if(!r.contracts.length) h+='<div class="empty-msg">아직 임대 계약이 없어요. 매물 목록 → ✏️ 수정에서 세입자를 정하면 계약이 생겨요.</div>';
+  else h+='<div class="stw"><table class="stb"><thead><tr><th>자리</th><th>주인</th><th>세입자</th><th>방식</th><th>월세/주</th><th>보증금</th><th>이번 주</th><th>상태</th></tr></thead><tbody>'+
+    r.contracts.map(function(x){
+      var st=x.state==='연체'?'<span class="re-late">⏰ 연체 · 유예 '+x.graceLeft+'일 남음</span>':x.state==='분할'?'<span class="re-late plan">📅 분할 상환</span>':'<span class="ls-ok">정상</span>';
+      return '<tr><td><b>'+esc(x.assetNo)+'</b> '+esc(x.name)+'</td><td>'+esc(x.owner)+'</td><td>'+esc(x.tenant)+'</td><td>'+esc(x.type)+'</td>'+
+        '<td>'+(x.type==='월세'?w(x.rent):'-')+'</td><td>'+w(x.deposit)+'</td><td>'+(x.type!=='월세'?'-':!x.paidWeek?'⏳ 정산 전':x.state==='연체'?'⏰ 못 냄':'✅ 냄')+'</td>'+
+        '<td>'+st+(x.lateCount?' <span class="ls-cnt">연속 연체 '+x.lateCount+'회</span>':'')+'</td></tr>';
+    }).join('')+'</tbody></table></div>';
+  // 연체금
+  h+='<div class="ls-sec">⏰ 연체금 · 갚을 돈 <span class="pill">'+r.debts.length+'건</span></div>';
+  if(!r.debts.length) h+='<div class="empty-msg">연체금이 없어요. 👍</div>';
+  else {
+    var seen={};
+    h+='<div class="stw"><table class="stb"><thead><tr><th>낼 사람</th><th>받을 사람</th><th>자리</th><th>남은 금액</th><th>시작</th><th>갚는 방법</th>'+(t?'<th>분할 상환</th>':'')+'</tr></thead><tbody>'+
+      r.debts.map(function(d){
+        var how=d.kind==='보증금 반환'?'주인이 돌려줄 보증금':d.perWeek>0?'매주 '+w(d.perWeek)+(d.paidThisWeek?' (이번 주 냄)':''):'한 번에 (유예 '+Math.max(0,c.graceDays-d.days)+'일 남음'+(d.penalized?' · 신용 반영됨':'')+')';
+        var btn=t&&!seen[d.payerNo]?'<button class="btn btn-sm btn-outline" onclick="leasePlan(\''+esc(d.payerNo)+'\',\''+esc(d.payer)+'\')">📅 분할 상환</button>':'';
+        seen[d.payerNo]=1;
+        return '<tr><td><b>'+esc(d.payer)+'</b></td><td>'+esc(d.payee)+'</td><td>'+esc(d.asset)+'</td><td><b>'+w(d.amount+d.fee)+'</b>'+(d.fee?' <span class="ls-cnt">연체료 '+d.fee+' 포함</span>':'')+'</td>'+
+          '<td>'+esc(d.created)+'</td><td>'+how+'</td>'+(t?'<td>'+btn+'</td>':'')+'</tr>';
+      }).join('')+'</tbody></table></div>';
+    h+='<div class="ls-note">💡 연체 중인 학생이 월급·지급을 받으면 <b>연체금부터 먼저</b> 자동으로 갚아요. (스마트 월급 명세서의 🏠 연체 월세 상환 칸에서 금액을 확인하고 고칠 수 있어요)</div>';
+  }
+  // 공공임대
+  h+='<div class="ls-sec">🏛️ 공공임대 자리 <span class="pill">'+r.publics.filter(function(p){ return p.on; }).length+'곳</span></div>';
+  if(!r.publics.length) h+='<div class="empty-msg">공공임대에 등록된 자리가 없어요. 주인이 자리 배치도에서 자기 자리를 눌러 등록할 수 있어요.</div>';
+  else h+='<div class="stw"><table class="stb"><thead><tr><th>자리</th><th>주인</th><th>매주 국고 지급</th><th>보류액</th><th>이번 주</th></tr></thead><tbody>'+
+    r.publics.map(function(p){ return '<tr><td><b>'+esc(p.assetNo)+'</b> '+esc(p.name)+(p.on?'':' <span class="ls-cnt">해제됨</span>')+'</td><td>'+esc(p.owner)+'</td><td>'+(p.on?w(p.pay):'-')+'</td><td>'+(p.held?'<b class="ls-held">'+w(p.held)+'</b>':'-')+'</td><td>'+(p.paidWeek?'✅ 정산함':'⏳ 아직')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  // 설정
+  var inp=function(k,lb,unit,ro){ return '<label class="lc">'+lb+'<span><input id="lc-'+k+'" type="number" value="'+c[k]+'"'+(ro?' disabled':'')+'> '+unit+'</span></label>'; };
+  h+='<div class="ls-sec">⚙️ 임대 설정 '+(t?'':'<span class="ls-cnt">선생님만 바꿀 수 있어요</span>')+'</div><div class="lc-grid">'+
+    inp('pubPct','🏛️ 공공임대 국고 지급 (시장 월세의)','%',!t)+inp('capPct','🛡️ 월세 상한 (세입자 주급의)','%',!t)+
+    inp('lateFee','💸 연체료 (유예 기간 안에 낼 때)','머니',!t)+inp('graceDays','⏳ 유예 기간','일',!t)+inp('creditPenalty','📉 연체 신용 하락','점',!t)+'</div>'+
+    (t?'<button class="btn btn-green btn-sm" onclick="leaseCfgSave()"><i class="fa-solid fa-floppy-disk"></i> 설정 저장</button>':'');
+  b.innerHTML=h;
+}
 function reCanEdit(){ return _isTeacher || hasJob(_myJob,'부동산 중개인'); }
 function reEditOpen(assetNo){
   var cc=_cc||_adminCC;
@@ -2346,9 +2438,9 @@ function reEditShow(re, stus){
     '<div class="re-ed-grid">'+
     '<label>방식<select id="ree-lease" onchange="reEditSync()"><option value="">세입자 없음</option><option'+(re.leaseType==='월세'?' selected':'')+'>월세</option><option'+(re.leaseType==='전세'?' selected':'')+'>전세</option></select></label>'+
     '<label>세입자<select id="ree-tenant">'+stuOpts(re.tenantNo,'-- 학생 선택 --')+'</select></label>'+
-    '<label id="ree-amt-box">전세금 (머니)<input id="ree-amt" type="number" min="0" value="'+(re.leaseAmt||0)+'"></label>'+
+    '<label id="ree-amt-box"><span id="ree-amt-lb">보증금 (머니)</span><input id="ree-amt" type="number" min="0" value="'+(re.leaseAmt||0)+'"></label>'+
     '</div></div>'+
-    '<div class="re-ed-note">💸 세입자를 새로 정하면 <b>월세 첫 주치</b>(전세면 <b>전세금</b>)가 세입자 카드에서 소유자 카드로 바로 옮겨 가요. 전세가 끝나면 전세금이 세입자에게 돌아가요. 월세는 <b>매주 자동으로</b> 걷혀요.<br>이름·가격만 고치면 돈은 그대로예요. 매물 구매 금액은 이 창에서 주고받지 않아요.</div>'+
+    '<div class="re-ed-note">💸 새 계약이면 <b>보증금(전세금)</b>이 세입자 카드에서 주인 카드로 옮겨 가고, 계약이 끝나면 남은 보증금이 세입자에게 돌아가요.<br>📅 월세는 선생님이 매주 <b>이번 주 월세 정산</b>을 누를 때 걷혀요. 못 내면 연체 → 유예 기간이 지나면 보증금에서 빠져요.<br>🛡️ 주간 월세가 세입자 주급의 '+(_leaseCap||30)+'%를 넘으면 계약할 수 없어요.<br>이름·가격만 고치면 돈은 그대로예요. 매물 구매 금액은 이 창에서 주고받지 않아요.</div>'+
     '<div class="sm-pop-btns"><button class="btn btn-outline" onclick="reEditClose()">취소</button><button class="btn btn-green" onclick="reEditSave(\''+esc(String(re.assetNo))+'\')"><i class="fa-solid fa-floppy-disk"></i> 저장</button></div></div>';
   var pop=$('re-ed-pop');
   if(!pop){ pop=document.createElement('div'); pop.id='re-ed-pop'; pop.className='sm-pop'; document.body.appendChild(pop);
@@ -2361,7 +2453,8 @@ function reEditSync(){
   var hasOwner=!!$('ree-owner').value, lease=$('ree-lease').value;
   $('ree-lease-box').style.display=hasOwner?'':'none';
   $('ree-tenant').disabled=!lease;
-  $('ree-amt-box').style.display=lease==='전세'?'':'none';
+  $('ree-amt-box').style.display=lease?'':'none';
+  if($('ree-amt-lb')) $('ree-amt-lb').textContent=lease==='전세'?'전세금 (머니)':'보증금 (머니, 연체 때 여기서 빠져요)';
 }
 function reEditClose(){ var p=$('re-ed-pop'); if(p) p.classList.remove('show'); }
 async function reEditSave(assetNo){
@@ -2372,12 +2465,11 @@ async function reEditSave(assetNo){
   // 돈이 움직이는 경우 미리 알려 주기 (서버와 같은 규칙)
   var o=_reEditing||{}, oT=o.status==='임대중'?String(o.tenantNo||''):'', oOwner=o.status==='매물'?'':String(o.ownerNo||'');
   var amt=Math.round(Number(d.leaseAmt)||0);
-  var same=oT && oT===d.tenantNo && oOwner===d.ownerNo && o.leaseType===d.leaseType && (d.leaseType!=='전세'||Number(o.leaseAmt)===amt);
-  var moves=[];
+  var same=oT && oT===d.tenantNo && oOwner===d.ownerNo && o.leaseType===d.leaseType;
+  var moves=[], dep=function(t){ return t==='전세'?'전세금':'보증금'; };
   if(!same){
-    if(oT && o.leaseType==='전세' && o.leaseAmt>0) moves.push('전세금 '+Number(o.leaseAmt).toLocaleString()+' 머니: 소유자 → '+oT+'번 세입자에게 돌려줘요');
-    if(d.tenantNo && d.leaseType==='전세' && amt>0) moves.push('전세금 '+amt.toLocaleString()+' 머니: '+d.tenantNo+'번 세입자 → 소유자');
-    if(d.tenantNo && d.leaseType==='월세') moves.push('첫 주 월세: '+d.tenantNo+'번 세입자 → 소유자 (그다음부터는 매주 자동)');
+    if(oT && o.leaseAmt>0) moves.push(dep(o.leaseType)+' '+Number(o.leaseAmt).toLocaleString()+' 머니: 주인 → '+oT+'번 세입자에게 돌려줘요');
+    if(d.tenantNo && amt>0) moves.push(dep(d.leaseType)+' '+amt.toLocaleString()+' 머니: '+d.tenantNo+'번 세입자 → 주인');
   }
   if(moves.length && !await uiConfirm('💸 저장하면 돈이 움직여요\n\n'+moves.join('\n')+'\n\n저장할까요?')) return;
   showLoading();
@@ -4043,7 +4135,14 @@ async function resetPayrollOrder(){
   }).withFailureHandler(function(e){ alert('오류: '+e.message); }).setStudentOrder(_adminCC, '[]');
 }
 
+// 연체 월세 (Code.gs getRentDues) — 월급에서 먼저 갚을 금액을 명세서에 보여 주고 고칠 수 있게
+var _rentDues={};
+function payrollHasRent(){ return Object.keys(_rentDues).some(function(k){ return (_rentDues[k].due||0)>0; }); }
 function initSmartPayrollDraw(){
+  google.script.run.withSuccessHandler(function(d){ _rentDues=(d&&d.success&&d.dues)||{}; initSmartPayrollDraw2(); })
+    .withFailureHandler(function(){ _rentDues={}; initSmartPayrollDraw2(); }).getRentDues(_adminCC);
+}
+function initSmartPayrollDraw2(){
   if(Object.keys(_salaryTable).length===0){
     google.script.run
       .withSuccessHandler(function(r){
@@ -4073,6 +4172,8 @@ function renderSmartPayrollTable(){
     var hint=isIncomeTaxCol(col)?'<div style="font-size:12px;color:#94A3B8;margin-top:3px;">기본금의 10% · 총 자산(카드+은행+주식) '+INCOME_TAX_RICH_LINE.toLocaleString()+' 머니 이상은 20%</div>':'';
     h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:'+cc+';border-bottom:2px solid #E2E8F0;white-space:nowrap;min-width:150px;">'+esc(col.name)+' '+sign+hint+'</th>';
   });
+  var hasRent=payrollHasRent();
+  if(hasRent) h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:#B45309;border-bottom:2px solid #E2E8F0;white-space:nowrap;min-width:150px;background:#FFFBEB;">🏠 연체 월세 상환 (-)<div style="font-size:12px;color:#94A3B8;margin-top:3px;">연체 중인 학생만 · 월급에서 먼저 갚아요</div></th>';
   h+='<th style="padding:16px 18px;text-align:center;font-size:15px;font-weight:700;color:#10B981;border-bottom:2px solid #E2E8F0;white-space:nowrap;background:#F0FDF4;min-width:130px;">실수령액</th>';
   h+='</tr>';
 
@@ -4104,6 +4205,7 @@ function renderSmartPayrollTable(){
     h+='  </div>';
     h+='</td>';
   });
+  if(hasRent) h+='<td style="background:#FFFBEB;"></td>';
   h+='<td style="background:#F0FDF4;"></td>';
   h+='</tr>';
   h+='</thead>';
@@ -4138,6 +4240,14 @@ function renderSmartPayrollTable(){
       h+='    style="width:90px;padding:9px 10px;border:2px solid '+bc+';border-radius:10px;font-size:16px;font-weight:600;text-align:center;color:'+tc+';font-family:Pretendard,sans-serif;outline:none;">';
       h+='</td>';
     });
+    if(hasRent){
+      var rd=_rentDues[String(s.studentNo)], due=rd?(rd.due||0):0;
+      netCalc-=due;
+      h+='<td style="padding:14px 18px;text-align:center;background:#FFFBEB;">';
+      h+= due>0 ? '<input type="number" id="sp-rent-'+idx+'" value="'+due+'" min="0" max="'+due+'" onchange="this.value=Math.max(0,Math.min('+due+',parseInt(this.value)||0));updateNetPay('+idx+')" style="width:90px;padding:9px 10px;border:2px solid #FCD34D;border-radius:10px;font-size:16px;font-weight:600;text-align:center;color:#B45309;font-family:Pretendard,sans-serif;outline:none;"><div style="font-size:12px;color:#B45309;margin-top:2px;">'+(rd.plan?'분할 이번 주 몫':'남은 연체 '+Number(rd.total).toLocaleString())+'</div>'
+                  : '<span style="color:#CBD5E1;">-</span>';
+      h+='</td>';
+    }
     h+='<td style="padding:14px 18px;text-align:center;background:#F0FDF4;">';
     h+='  <span id="sp-net-'+idx+'" style="font-family:Jua,sans-serif;font-size:26px;color:'+(netCalc>=0?'#10B981':'#EF4444')+';">'+netCalc.toLocaleString()+'</span>';
     h+='  <div style="font-size:12px;color:#94A3B8;margin-top:2px;">머니</div>';
@@ -4163,6 +4273,7 @@ function renderSmartPayrollTable(){
     h+='  <div id="total-col-'+cidx+'" style="font-family:Jua,sans-serif;font-size:20px;color:'+tc+';">0</div>';
     h+='</td>';
   });
+  if(hasRent) h+='<td style="padding:16px 18px;text-align:center;"><div style="font-size:12px;color:#94A3B8;margin-bottom:3px;">연체 월세 상환 합계</div><div id="total-rent" style="font-family:Jua,sans-serif;font-size:20px;color:#FCD34D;">0</div></td>';
   h+='<td style="padding:16px 18px;text-align:center;background:rgba(16,185,129,0.15);">';
   h+='  <div style="font-size:12px;color:#6EE7B7;margin-bottom:3px;">총 실수령액</div>';
   h+='  <div id="total-net" style="font-family:Jua,sans-serif;font-size:26px;color:#34D399;">0</div>';
@@ -4221,6 +4332,7 @@ function updateNetPay(idx){
     var v=parseInt(($('sp-col-'+idx+'-'+cidx)||{}).value)||0;
     if(col.type==='deduct') net-=v; else net+=v;
   });
+  net-=parseInt(($('sp-rent-'+idx)||{}).value)||0;   // 🏠 연체 월세 상환
   var el=$('sp-net-'+idx);
   if(el){ el.textContent=net.toLocaleString(); el.style.color=net>=0?'#10B981':'#EF4444'; }
   updatePayrollTotals(); // ← 이 줄 추가
@@ -4229,7 +4341,7 @@ function updateNetPay(idx){
 // 합계 행 업데이트
 function updatePayrollTotals(){
   var cols=getEffectiveCols();
-  var totalBase=0, totalNet=0;
+  var totalBase=0, totalNet=0, totalRent=0;
   var colTotals=cols.map(function(){ return 0; });
   _payrollList.forEach(function(s,idx){
     var base=parseInt(($('sp-base-'+idx)||{}).value)||0;
@@ -4240,6 +4352,7 @@ function updatePayrollTotals(){
       colTotals[cidx]+=v;
       if(col.type==='deduct') net-=v; else net+=v;
     });
+    var rv=parseInt(($('sp-rent-'+idx)||{}).value)||0; totalRent+=rv; net-=rv;
     totalNet+=net;
   });
   if($('total-base')) $('total-base').textContent=totalBase.toLocaleString();
@@ -4247,6 +4360,7 @@ function updatePayrollTotals(){
     var el=$('total-col-'+cidx);
     if(el) el.textContent=colTotals[cidx].toLocaleString();
   });
+  if($('total-rent')) $('total-rent').textContent=totalRent.toLocaleString();
   if($('total-net')){ $('total-net').textContent=totalNet.toLocaleString(); $('total-net').style.color=totalNet>=0?'#34D399':'#FCA5A5'; }
 }
 
@@ -4349,9 +4463,11 @@ async function executeSmartPayrollUI(){
       if(col.type==='deduct') net-=v; else net+=v;
     });
     if(net===0) return;   // 0 머니는 지급하지 않음 (내역에 빈 기록이 쌓이지 않게)
-    payroll.push({studentNo:String(s.studentNo), netPay:net});
-    lines.push(s.studentNo+'번 '+(s.name||'')+' : '+(net>0?'+':'')+net.toLocaleString()+' 머니');
-    total+=net;
+    // 🏠 연체 월세: 월급(net)을 넣은 뒤 이 금액만큼 먼저 갚음 → 카드에 남는 돈 = net - rent
+    var rentEl=$('sp-rent-'+idx), rent=rentEl?Math.max(0,parseInt(rentEl.value)||0):0;
+    payroll.push({studentNo:String(s.studentNo), netPay:net, rentRepay: rentEl?rent:undefined});
+    lines.push(s.studentNo+'번 '+(s.name||'')+' : '+(net-rent>0?'+':'')+(net-rent).toLocaleString()+' 머니'+(rent?' (🏠 연체 월세 '+rent.toLocaleString()+' 먼저 갚음)':''));
+    total+=net-rent;
   });
   if(!payroll.length) return alert('지급할 금액이 없습니다.\n기본급이나 항목 금액을 입력해 주세요.');
   var preview=lines.slice(0,12).join('\n')+(lines.length>12?'\n… 외 '+(lines.length-12)+'명':'');
